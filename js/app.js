@@ -4,7 +4,7 @@
   const $ = (s) => document.querySelector(s);
 
   // Background: ?bg=paper|white|mist|night|charcoal
-  MB.setTheme(new URLSearchParams(location.search).get('bg') || 'paper');
+  MB.setTheme(new URLSearchParams(location.search).get('bg') || 'night');
   document.documentElement.dataset.ground = MB.theme.dark ? 'dark' : 'light';
   document.documentElement.style.setProperty('--bg', MB.PAPER);
 
@@ -115,13 +115,13 @@
     c.drawImage(finalCanvas, 0, 0);
     const title = $('#title').value.trim();
     c.textAlign = 'right';
-    c.fillStyle = 'rgba(30, 24, 34, 0.72)';
+    c.fillStyle = MB.theme.dark ? 'rgba(244, 240, 234, 0.8)' : 'rgba(30, 24, 34, 0.72)';
     if (title) {
-      c.font = 'italic 56px "Cormorant Garamond", Georgia, serif';
+      c.font = '56px "Cormorant Garamond", Georgia, serif';
       c.fillText(title, W - 70, H - 108);
     }
     c.font = '26px Inter, system-ui, sans-serif';
-    c.fillStyle = 'rgba(30, 24, 34, 0.55)';
+    c.fillStyle = MB.theme.dark ? 'rgba(244, 240, 234, 0.55)' : 'rgba(30, 24, 34, 0.55)';
     c.fillText(`${summary.caption} · Minor Bloom`, W - 70, H - 62);
     out.toBlob((blob) => {
       const a = document.createElement('a');

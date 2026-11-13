@@ -29,7 +29,7 @@ body {
 
 /* Text-only buttons */
 button, .file-btn {
-  font: inherit; font-style: italic; color: var(--ink-soft); cursor: pointer;
+  font: inherit; color: var(--ink-soft); cursor: pointer;
   background: none; border: none; padding: 4px 2px;
   transition: color 0.2s;
 }
@@ -46,12 +46,13 @@ button:focus-visible, .file-btn:focus-within, input:focus-visible {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
   width: min(440px, calc(100vw - 32px)); text-align: center;
 }
-h1 { font-weight: 400; font-style: italic; font-size: 44px; margin: 0 0 14px; letter-spacing: 0.01em; }
+h1 { font-weight: 400; font-size: 44px; margin: 0 0 14px; letter-spacing: 0.01em; }
 .error { font-family: Inter, system-ui, sans-serif; font-size: 13px; color: var(--error); margin: 14px 0 0; line-height: 1.5; }
 .help { margin-top: 18px; font-family: Inter, system-ui, sans-serif; font-size: 13px; color: var(--ink-soft); line-height: 1.55; }
-.help summary { cursor: pointer; list-style: none; font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-size: 16px; }
+.help summary { cursor: pointer; list-style: none; font-family: 'Cormorant Garamond', Georgia, serif; font-size: 16px; }
 .help summary::-webkit-details-marker { display: none; }
 .help p { margin: 10px 0 0; }
+.help em { font-style: normal; color: var(--ink); }
 
 /* While listening: fades away when you're not using the mouse */
 #hud {
@@ -62,7 +63,6 @@ h1 { font-weight: 400; font-style: italic; font-size: 44px; margin: 0 0 14px; le
 #hud.quiet { opacity: 0; }
 #hud:hover { opacity: 1; }
 #mood { margin: 0; }
-#mood-word { font-style: italic; }
 #mood-detail { font-family: Inter, system-ui, sans-serif; font-size: 12px; color: var(--ink-soft); margin-left: 6px; }
 
 /* Finished painting */
@@ -78,7 +78,7 @@ h1 { font-weight: 400; font-style: italic; font-size: 44px; margin: 0 0 14px; le
 }
 #final { max-width: 100%; max-height: 100%; width: auto; height: auto; }
 #title {
-  width: min(480px, 100%); font: inherit; font-style: italic; font-size: 22px;
+  width: min(480px, 100%); font: inherit; font-size: 22px;
   text-align: center; color: var(--ink); background: transparent; border: none; padding: 2px 8px;
 }
 #title::placeholder { color: var(--ink-faint); }

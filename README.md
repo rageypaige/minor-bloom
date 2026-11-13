@@ -50,4 +50,7 @@ the tempo.
 - `js/brush.js`: shared noise, watercolor shapes and palettes
 - `js/app.js`: ties it all together
 
+The canvas is midnight by default. To try other grounds, add `?bg=paper`,
+`?bg=white`, `?bg=mist` or `?bg=charcoal` to the address.
+
 No build step and nothing to install. It's plain HTML, CSS and JavaScript.

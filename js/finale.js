@@ -44,20 +44,34 @@
     const moodAt = (t) => ({ mode: at(M, t), energy: at(E, t), brightness: at(B, t), hueShift });
     const avgMood = { mode: avg(M), energy: avg(E), brightness: avg(B), hueShift };
     const k = W / 2400; // scale for sizes
+    // On a dark ground paint glows (screen) instead of staining (multiply).
+    const dark = !!MB.theme.dark;
+    const glaze = dark ? 'screen' : 'multiply';
 
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = MB.PAPER;
     ctx.fillRect(0, 0, W, H);
     yield;
 
-    // 1. Sky: broad, pale washes that drift with the song's mood over time.
-    ctx.globalCompositeOperation = 'multiply';
+    // 1. Sky: broad washes that drift with the song's mood over time. Pale
+    //    on paper; a deep, mood-tinted night on dark grounds.
+    ctx.globalCompositeOperation = dark ? 'source-over' : 'multiply';
     const skyCount = 7;
     for (let s = 0; s < skyCount; s++) {
       const t = (s + 0.5) / skyCount;
-      const c = MB.moodHSL(s, moodAt(t));
-      c.l = Math.min(92, Math.max(c.l + 26, 66));
-      c.s *= 0.6;
+      let c = MB.moodHSL(s, moodAt(t));
+      if (dark) {
+        // night sky: deep blue for minor, violet dusk for major, never red
+        const m = moodAt(t);
+        c = {
+          h: MB.lerp(228, 282, clamp(m.mode)) + hueShift + (rand() - 0.5) * 16,
+          s: 38 + m.energy * 20,
+          l: 13 + m.brightness * 9,
+        };
+      } else {
+        c.l = Math.min(92, Math.max(c.l + 26, 66));
+        c.s *= 0.6;
+      }
       const x = t * W + (rand() - 0.5) * W * 0.08;
       const y = H * (0.1 + rand() * 0.22);
       const r = H * (0.28 + rand() * 0.12);
@@ -66,6 +80,21 @@
         MB.fillPoly(ctx, MB.deform(base, 2, 0.3, rand), MB.hsla(c, 0.017));
         if (L % 6 === 5) yield;
       }
+    }
+
+    // Stars on dark grounds: more of them for brighter-sounding songs.
+    if (dark) {
+      ctx.globalCompositeOperation = 'source-over';
+      const stars = Math.round(60 + avgMood.brightness * 140);
+      for (let i = 0; i < stars; i++) {
+        const x = rand() * W, y = rand() * rand() * H * 0.55;
+        const r = (0.8 + rand() * rand() * 3) * k;
+        ctx.fillStyle = `rgba(250,246,236,${(0.15 + rand() * 0.6).toFixed(2)})`;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      yield;
     }
 
     // 2. A sun for songs that lean major, a moon for those that lean minor,
@@ -81,8 +110,21 @@
       const r = H * 0.075;
       // soft glow first
       const glow = MB.deform(MB.polygon(cx, cy, r * 2.4, 14, rand), 3, 0.3, rand);
-      const glowC = { h: orb.h, s: orb.s * 0.6, l: Math.min(90, orb.l + 14) };
-      for (let L = 0; L < 20; L++) MB.fillPoly(ctx, MB.deform(glow, 2, 0.2, rand), MB.hsla(glowC, 0.025));
+      const glowC = dark
+        ? { h: orb.h, s: orb.s * 0.7, l: 30 }
+        : { h: orb.h, s: orb.s * 0.6, l: Math.min(90, orb.l + 14) };
+      ctx.globalCompositeOperation = glaze;
+      if (dark) {
+        // a soft halo of light
+        const g = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * 4);
+        g.addColorStop(0, MB.hsla(glowC, 0.55));
+        g.addColorStop(0.35, MB.hsla(glowC, 0.18));
+        g.addColorStop(1, MB.hsla(glowC, 0));
+        ctx.fillStyle = g;
+        ctx.fillRect(cx - r * 4, cy - r * 4, r * 8, r * 8);
+      } else {
+        for (let L = 0; L < 20; L++) MB.fillPoly(ctx, MB.deform(glow, 2, 0.2, rand), MB.hsla(glowC, 0.025));
+      }
       yield;
       ctx.globalCompositeOperation = 'source-over';
       const base = MB.deform(MB.polygon(cx, cy, r, 14, rand), 2, 0.12, rand);
@@ -119,9 +161,15 @@
       const colorStops = [];
       for (let s = 0; s <= stops; s++) {
         const c = MB.moodHSL(i * 2 + s, moodAt(s / stops));
-        // atmospheric perspective: distant hills are paler and softer
-        c.l = clamp(c.l + (1 - depth) * 22 - depth * 4, 10, 92);
-        c.s *= 0.45 + depth * 0.3;
+        if (dark) {
+          // at night, distant hills fade into the sky; near ones hold colour
+          c.l = clamp(c.l * (0.32 + depth * 0.3), 8, 60);
+          c.s *= 0.45 + depth * 0.45;
+        } else {
+          // atmospheric perspective: distant hills are paler and softer
+          c.l = clamp(c.l + (1 - depth) * 22 - depth * 4, 10, 92);
+          c.s *= 0.45 + depth * 0.3;
+        }
         colorStops.push(c);
       }
       for (let L = 0; L < 14; L++) {
@@ -129,25 +177,25 @@
         const g = ctx.createLinearGradient(shift, 0, W + shift, 0);
         colorStops.forEach((c, s) => {
           const jit = { h: c.h + (rand() - 0.5) * 10, s: c.s, l: c.l + (rand() - 0.5) * 6 };
-          g.addColorStop(s / stops, MB.hsla(jit, 0.075));
+          g.addColorStop(s / stops, MB.hsla(jit, 0.06));
         });
         MB.fillPoly(ctx, MB.deform(base, 2, 0.07, rand), g);
         if (L % 4 === 3) yield;
       }
-      for (let s = 0; s < 8; s++) {
+      for (let s = 0; s < 16; s++) {
         const t = rand();
         const x = t * W;
         const y = topY(x) + H * (0.03 + rand() * 0.12);
         const c = { ...colorStops[Math.round(t * stops)] };
         c.l = clamp(c.l + (rand() - 0.6) * 16, 10, 92);
         const blot = MB.deform(MB.polygon(x, y, H * (0.05 + rand() * 0.07), 10, rand), 3, 0.45, rand);
-        for (let L = 0; L < 8; L++) MB.fillPoly(ctx, MB.deform(blot, 2, 0.25, rand), MB.hsla(c, 0.045));
+        for (let L = 0; L < 8; L++) MB.fillPoly(ctx, MB.deform(blot, 2, 0.25, rand), MB.hsla(c, 0.05));
       }
       yield;
     }
 
     // 4. Flowers where the song swells.
-    ctx.globalCompositeOperation = 'multiply';
+    ctx.globalCompositeOperation = glaze;
     const peaks = [];
     for (let i = 1; i < n - 1; i++) {
       if (E[i] >= E[i - 1] && E[i] > E[i + 1] && E[i] > 0.4) peaks.push({ i, v: E[i] });
@@ -162,7 +210,7 @@
       const c = MB.accentHSL(Math.floor(rand() * 4), moodAt(t));
       const base = MB.deform(MB.polygon(x, y, r, 10, rand), 3, 0.4, rand);
       for (let L = 0; L < 22; L++) MB.fillPoly(ctx, MB.deform(base, 2, 0.25, rand), MB.hsla(c, 0.06));
-      const heart = { h: c.h, s: c.s, l: Math.max(12, c.l - 25) };
+      const heart = dark ? { h: c.h, s: c.s * 0.8, l: Math.min(85, c.l + 20) } : { h: c.h, s: c.s, l: Math.max(12, c.l - 25) };
       const hb = MB.deform(MB.polygon(x, y, r * 0.3, 8, rand), 2, 0.3, rand);
       for (let L = 0; L < 10; L++) MB.fillPoly(ctx, MB.deform(hb, 2, 0.2, rand), MB.hsla(heart, 0.07));
       yield;
@@ -204,9 +252,9 @@
       if (s % 12 === 11) yield;
     }
 
-    // 6. Paper grain over everything.
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.globalAlpha = 0.5;
+    // 6. Grain over everything (lighter touch on dark grounds).
+    ctx.globalCompositeOperation = dark ? 'soft-light' : 'multiply';
+    ctx.globalAlpha = dark ? 0.25 : 0.5;
     ctx.fillStyle = ctx.createPattern(MB.makeGrain(512, opts.seed || 3), 'repeat');
     ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = 1;
