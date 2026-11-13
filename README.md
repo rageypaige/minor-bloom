@@ -38,6 +38,14 @@ finished artwork.
 
 ## How it paints
 
+While the song plays you watch **wet paint**: brushes that flow with the music
+in real time, sparse when it's just a voice and a guitar and lush when the band
+comes in, with bright flicks on accents and a glowing line for the voice. It
+dries away after a few seconds. Beneath it, a **permanent painting** builds up
+slowly; that's what remains when the song ends, and what you save.
+
+The permanent painting:
+
 - **Marks are physical.** Each stroke is painted by a set of bristles. It has a
   touch-down, a weighted body and a taper, and its pigment runs out as it goes.
   The surface has a texture, and paint only catches where there's enough
@@ -57,7 +65,8 @@ the tempo.
 
 - `index.html`, `css/style.css`: the page
 - `js/listener.js`: audio capture and analysis (loudness, brightness, key, chords, tempo)
-- `js/painter.js`: the brush, the composition and the painting itself
+- `js/flow.js`: the wet paint, the moving layer you watch while listening
+- `js/painter.js`: the permanent painting: brush, composition and accumulation
 - `js/brush.js`: shared noise, palettes and canvas grounds
 - `js/app.js`: ties it all together
 

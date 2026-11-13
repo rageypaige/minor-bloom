@@ -1,4 +1,5 @@
-// The painting.
+// The permanent painting: it builds slowly under the wet paint (flow.js)
+// and is what gets saved when the song ends.
 //
 // One artwork accumulates for the whole song on a fixed-size canvas. Marks
 // are never erased: movement comes only from new paint being laid down.
@@ -302,8 +303,9 @@
       return this.art;
     }
 
-    // Draw the artwork into the window (fitted, never cropped).
-    render() {
+    // Draw the artwork into the window (fitted, never cropped), with the wet
+    // paint layer blended over it.
+    render(wet, artAlpha = 1) {
       const ctx = this.ctx;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = MB.PAPER;
@@ -311,7 +313,14 @@
       const k = Math.min(this.c.width / this.W, this.c.height / this.H);
       const dw = this.W * k, dh = this.H * k;
       ctx.imageSmoothingQuality = 'high';
+      ctx.globalAlpha = artAlpha;
       ctx.drawImage(this.art, (this.c.width - dw) / 2, (this.c.height - dh) / 2, dw, dh);
+      ctx.globalAlpha = 1;
+      if (wet) {
+        ctx.globalCompositeOperation = wet.blend;
+        ctx.drawImage(wet.c, 0, 0, this.c.width, this.c.height);
+        ctx.globalCompositeOperation = 'source-over';
+      }
     }
 
     // ---------- Composition ----------
@@ -578,7 +587,7 @@
       const idle = !this.active;
       if (idle) {
         // a few delicate marks behind the start screen, then rest
-        if (this.idleMarks < 9) {
+        if (this.idleMarks < 0) {
           this.clock -= dt;
           if (this.clock <= 0) {
             this.clock = rnd(1.2, 2.2);
@@ -640,7 +649,6 @@
       for (const s of this.strokes) s.advance(this, dt);
       this.strokes = this.strokes.filter((s) => !s.done);
       if (!idle) this._voice(f, dt);
-      this.render();
     }
   }
 

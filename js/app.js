@@ -9,6 +9,7 @@
   document.documentElement.style.setProperty('--bg', MB.PAPER);
 
   const painter = new MB.LivePainter($('#live'));
+  const wet = new MB.FlowLayer(document.createElement('canvas'));
   $('#grain').style.backgroundImage = `url(${MB.makeGrain(400).toDataURL()})`;
   $('#grain').style.opacity = MB.theme.grain;
 
@@ -55,6 +56,7 @@
     listener = l;
     l.onEnded = finish;
     painter.begin();
+    wet.clear();
     timeline = [];
     recTimer = hudTimer = quietTimer = 0;
     resetHud();
@@ -141,6 +143,7 @@
     setError('');
     $('#title').value = '';
     painter.clear();
+    wet.clear();
   }
 
   // The mood readout only changes on a real shift in the song: it follows a
@@ -209,6 +212,7 @@
 
   function clearCanvas() {
     painter.clear();
+    wet.clear();
   }
 
   function frame(now) {
@@ -216,11 +220,15 @@
     last = now;
 
     if (state === 'intro') {
-      painter.update(idleMood, dt);
+      wet.update(idleMood, dt);
+      painter.render(wet);
     } else if (state === 'listening' && listener && listener.analyzer) {
       const an = listener.analyzer;
       const f = an.update(dt);
       painter.update(f, dt);
+      wet.update(f, dt);
+      // while listening the moving paint leads; the painting waits beneath
+      painter.render(wet, 0.62);
       recTimer += dt;
       if (recTimer >= 0.25) {
         recTimer = 0;
@@ -257,7 +265,7 @@
   });
 
   // For testing from the console.
-  MB.debug = { painter, get listener() { return listener; }, get timeline() { return timeline; }, finish };
+  MB.debug = { painter, wet, get listener() { return listener; }, get timeline() { return timeline; }, finish };
 
   requestAnimationFrame(frame);
 })();
