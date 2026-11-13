@@ -68,6 +68,7 @@
     resetHud();
     state = 'listening';
     show($('#intro'), false);
+    show($('#credit'), false);
     show($('#hud'), true);
     $('#hud').classList.remove('quiet');
     $('#mood-word').textContent = 'listening…';
@@ -86,6 +87,7 @@
     if (timeline.length < 12 || heard < 3) {
       state = 'intro';
       show($('#intro'), true);
+      show($('#credit'), true);
       setError('That was too short or too quiet. Let it listen for at least a few seconds of music.');
       return;
     }
@@ -168,6 +170,7 @@
     state = 'intro';
     show($('#finale'), false);
     show($('#intro'), true);
+    show($('#credit'), true);
     setError('');
     $('#title').value = '';
     atmos.reset();
