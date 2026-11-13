@@ -320,7 +320,7 @@ void main(){
     }
 
     _pickKind(f) {
-      const vol = this.vol, lush = f.lush || 0, up = this.up || 0;
+      const vol = this.vol, lush = (f.lush || 0) * (0.35 + 0.65 * (this.drive ?? 0.5)), up = this.up || 0;
       const quiet = clamp(1 - vol * 1.5);
       const w = {
         wash: 0.25 + 0.45 * quiet,
@@ -436,7 +436,17 @@ void main(){
     }
 
     update(f, dt) {
-      const lush = f.lush || 0;
+      // DRIVE: how rhythmically driven the music is. Drums and cymbals bring
+      // high-frequency hiss and sharp bass hits; a piano, strings or a voice
+      // hardly any. Without drive, busy or wide-ranging music still reads as
+      // gentle (a flowing piano piece shouldn't light up like a dance track).
+      const hiN = clamp((Math.log10(((f.dbg && f.dbg.hi) || 0) + 1e-9) + 5) / 2.7);
+      this.hitRate = (this.hitRate ?? 0) + ((f.bassHit ? 1 / Math.max(dt, 1e-3) : 0) - (this.hitRate ?? 0)) * ease(dt, 5);
+      const driveRaw = f.silent ? (this.drive ?? 0.5) : clamp(0.75 * hiN + 0.25 * clamp(this.hitRate / 1.5));
+      this.drive = (this.drive ?? 0.5) + (driveRaw - (this.drive ?? 0.5)) * ease(dt, 3);
+      const drive = this.drive;
+      // fullness, as far as the visuals are concerned, needs some drive too
+      const lush = (f.lush || 0) * (0.35 + 0.65 * drive);
       const t = (this.t += dt);
       // volume with a quick, gentle attack and a slower release
       const lvl = f.silent ? 0 : (f.level ?? f.energy);
@@ -472,7 +482,7 @@ void main(){
       this.tensionPeak = Math.max(this.tension, (this.tensionPeak ?? 0) * Math.exp(-dt / 3));
       const arrival = this.eFast - this.eMid > 0.25 && this.eFast > 0.55 && this.heardT > 8;
       const toppedOut = this.tensionPeak > 0.4 && rising < this.tensionPeak * 0.6 && e > 0.45;
-      if (this.relCool <= 0 && !f.silent && (arrival || toppedOut)) { this._release(f); this.tensionPeak = 0; }
+      if (this.relCool <= 0 && !f.silent && (arrival || toppedOut) && (drive > 0.25 || this.eFast - this.eMid > 0.4)) { this._release(f); this.tensionPeak = 0; }
       this.release = (this.release ?? 0) * Math.exp(-dt / 6);
       const tension = this.tension, release = this.release;
       // INTENSITY: a slow, song-level sense of how big the music is: how loud
@@ -481,7 +491,7 @@ void main(){
       this.rmsL = (this.rmsL ?? 0.05) + ((f.silent ? 0 : f.rms || 0) - (this.rmsL ?? 0.05)) * ease(dt, 3);
       this.onsetRate = (this.onsetRate ?? 1) + ((f.beat ? 1 / Math.max(dt, 1e-3) : 0) - (this.onsetRate ?? 1)) * ease(dt, 4);
       const busy = clamp(this.onsetRate / 3.5);
-      const intRaw = clamp(0.35 * clamp(this.rmsL / 0.12) + 0.3 * lush + 0.2 * busy + 0.15 * clamp((this.bpm - 80) / 60) * busy);
+      const intRaw = clamp(0.3 * clamp(this.rmsL / 0.12) + 0.3 * drive + 0.25 * lush + 0.15 * busy * drive);
       this.intensity = (this.intensity ?? 0.5) + (intRaw - (this.intensity ?? 0.5)) * ease(dt, intRaw > (this.intensity ?? 0.5) ? 8 : 14);
       const intensity = this.intensity;
 
@@ -507,7 +517,7 @@ void main(){
 
       // how upbeat the music is right now: full, loud and quick
       const tempoUp = clamp((this.bpm - 80) / 70);
-      const upRaw = clamp(0.45 * lush + 0.35 * (f.energy || 0) + 0.2 * tempoUp);
+      const upRaw = clamp(0.45 * lush + 0.35 * (f.energy || 0) + 0.2 * tempoUp) * (0.3 + 0.7 * drive);
       this.up = (this.up ?? 0) + (upRaw - (this.up ?? 0)) * ease(dt, upRaw > (this.up ?? 0) ? 1.5 : 5);
       const up = this.up;
 
@@ -687,7 +697,7 @@ void main(){
     // ---------- Drawing ----------
     render(f, dt) {
       const gl = this.gl;
-      const lush = f.lush || 0, vol = this.vol, mid = f.mid ?? 0.3, high = f.high || 0;
+      const lush = (f.lush || 0) * (0.35 + 0.65 * (this.drive ?? 0.5)), vol = this.vol, mid = f.mid ?? 0.3, high = f.high || 0;
       const A = new Float32Array(MAXF * 4), B = new Float32Array(MAXF * 4);
       const C = new Float32Array(MAXF * 4), D = new Float32Array(MAXF * 4), E = new Float32Array(MAXF * 4);
       // distant layer first, then the midground
@@ -722,7 +732,7 @@ void main(){
         // a fresh drop is densest; it thins as it spreads
         const fresh = 0.75 + 0.5 * Math.exp(-g.age / (g.growTau * 3));
         const lum = far
-          ? 0.025 + 0.04 * vol + 0.03 * lush
+          ? (0.025 + 0.04 * vol + 0.03 * lush) * lightK
           : K.lum * g.lumMul * (0.07 + 0.42 * vol + 0.2 * up) * fresh * share * (g.dim ?? 1) * lightK;
         B.set([g.rot, warp, g.seed, lum * g.presence * (1 + 0.14 * b) * (1 + 0.18 * release)], i * 4);
         const c = g.col || [0.5, 0.5, 0.5];
@@ -746,7 +756,7 @@ void main(){
       gl.uniform1f(P.u.u_time, this.t);
       gl.uniform1f(P.u.u_high, high);
       // quiet passages keep the air thin and spacious
-      gl.uniform1f(P.u.u_haze, (0.07 + 0.2 * lush + 0.08 * vol) * (1 + 0.08 * br) * (1 - 0.3 * (this.tension || 0)) + 0.05 * (this.release || 0));
+      gl.uniform1f(P.u.u_haze, (0.5 + 0.5 * (this.intensity ?? 0.5)) * (0.07 + 0.2 * lush + 0.08 * vol) * (1 + 0.08 * br) * (1 - 0.3 * (this.tension || 0)) + 0.05 * (this.release || 0));
       gl.uniform3fv(P.u.u_tint, this.tint.map((v) => v * 0.22));
       gl.uniform1i(P.u.u_n, list.length);
       gl.uniform4fv(P.u.fA, A);
