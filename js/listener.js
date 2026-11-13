@@ -60,6 +60,20 @@
         const midi = 69 + 12 * Math.log2(f / 440);
         this.binPc[i] = ((Math.round(midi) % 12) + 12) % 12;
       }
+      // Log-spaced bands for judging how full the arrangement is.
+      this.mag = new Float32Array(bins);
+      this.NB = 24;
+      this.binBand = new Int8Array(bins).fill(-1);
+      for (let i = 1; i < bins; i++) {
+        const hz = i * this.binHz;
+        if (hz >= 40 && hz < 14000) this.binBand[i] = Math.floor((this.NB * Math.log(hz / 40)) / Math.log(14000 / 40));
+      }
+      this.bandPow = new Float32Array(this.NB);
+      // Candidate pitches for the lead melody, C3 to A5 in quarter tones.
+      this.cands = [];
+      for (let m = 48; m <= 81; m += 0.5) this.cands.push(440 * Math.pow(2, (m - 69) / 12));
+      this.melOnFor = 0;
+      this.melOffFor = 0;
       this.chromaFrame = new Float32Array(12);
       this.chromaShort = new Float32Array(12);
       this.chromaLong = new Float32Array(12);
@@ -79,6 +93,10 @@
         mode: 0.5, keyMode: 0.5, chordMode: 0.5,
         tonic: 0, hueShift: 0, bpm: 100,
         beat: false, beatStrength: 0, silent: true,
+        // how full the arrangement is: 0 = one voice and a guitar, 1 = everything
+        lush: 0,
+        // the lead melody (often the voice): pitch 0 = low, 1 = high
+        melody: { on: false, pitch: 0.5, loud: 0, conf: 0 },
       };
     }
 
@@ -100,13 +118,22 @@
       f.energy += (f.level - f.energy) * ease(dt, 0.25);
 
       // Spectrum: brightness (centroid), onset flux, and pitch classes.
-      let num = 0, den = 0, flux = 0;
+      let num = 0, den = 0, flux = 0, hiPow = 0, lowPow = 0, totPow = 0;
       const cf = this.chromaFrame.fill(0);
+      const bp = this.bandPow.fill(0);
       for (let i = 1; i < this.freq.length; i++) {
         let db = this.freq[i];
         if (!isFinite(db)) db = -160;
         const m = Math.pow(10, db / 20);
+        this.mag[i] = m;
         const hz = i * this.binHz;
+        const band = this.binBand[i];
+        if (band >= 0) {
+          bp[band] += m * m;
+          totPow += m * m;
+          if (hz > 5000) hiPow += m * m;
+          if (hz < 150) lowPow += m * m;
+        }
         if (hz < 12000) { num += hz * m; den += m; }
         const lm = Math.log1p(m * 1000);
         const d = lm - this.prev[i];
@@ -118,6 +145,29 @@
       const centroid = den > 0 ? num / den : 1000;
       const bright = clamp(Math.log2(Math.max(centroid, 1) / 400) / Math.log2(4000 / 400));
       if (!f.silent) f.brightness += (bright - f.brightness) * ease(dt, 0.6);
+
+      // Fullness: how evenly energy spreads across the bands, plus the shimmer
+      // of drums and cymbals up high.
+      let ent = 0;
+      if (totPow > 0) {
+        for (let b = 0; b < this.NB; b++) {
+          const q = bp[b] / totPow;
+          if (q > 0) ent -= q * Math.log(q);
+        }
+      }
+      if (!f.silent && totPow > 0) {
+        const k2 = ease(dt, 2);
+        this.spreadS = (this.spreadS ?? 0.5) + (ent / Math.log(this.NB) - (this.spreadS ?? 0.5)) * k2;
+        this.hiS = (this.hiS ?? 0) + (hiPow / totPow - (this.hiS ?? 0)) * k2;
+        this.lowS = (this.lowS ?? 0) + (lowPow / totPow - (this.lowS ?? 0)) * k2;
+      }
+      f.dbg = { spread: this.spreadS || 0, hi: this.hiS || 0, low: this.lowS || 0 };
+      const lushRaw = 0.4 * clamp(((this.spreadS || 0) - 0.5) / 0.25)
+        + 0.3 * clamp((Math.log10((this.hiS || 0) + 1e-7) + 4) / 2.5)
+        + 0.3 * clamp((this.lowS || 0) * 4);
+      f.lush += ((f.silent ? 0 : lushRaw) - f.lush) * ease(dt, 1.5);
+
+      this._melody(dt);
 
       if (!f.silent) {
         this.heard += dt;
@@ -168,6 +218,41 @@
       this.tempoTimer += dt;
       if (this.tempoTimer > 1) { this.tempoTimer = 0; this._tempo(); }
       return f;
+    }
+
+    // Find the strongest harmonic series in the vocal range. It follows the
+    // singer when there is one, or whatever carries the tune otherwise.
+    _melody(dt) {
+      const f = this.f, mel = f.melody, mag = this.mag, bh = this.binHz;
+      let best = 0, bestF = 0, sum = 0;
+      for (const f0 of this.cands) {
+        let s = 0;
+        for (let h = 1; h <= 5; h++) {
+          const b = Math.round((h * f0) / bh);
+          if (b + 1 >= mag.length) break;
+          s += Math.max(mag[b - 1], mag[b], mag[b + 1]) / Math.sqrt(h);
+        }
+        sum += s;
+        if (s > best) { best = s; bestF = f0; }
+      }
+      const conf = sum > 0 ? best / (sum / this.cands.length) : 0;
+      mel.raw = conf;
+      mel.rawF = bestF;
+      mel.conf += (conf - mel.conf) * ease(dt, 0.08);
+      // A sung note holds a steady pitch above the bass for a moment;
+      // strummed chords jump between candidates.
+      const semis = this.lastF ? Math.abs(12 * Math.log2(bestF / this.lastF)) : 99;
+      this.lastF = bestF;
+      this.steady = semis < 1.2 ? (this.steady || 0) + dt : 0;
+      const voiced = !f.silent && conf > 6 && bestF >= 165 && this.steady > 0.06;
+      if (voiced) { this.melOnFor += dt; this.melOffFor = 0; } else { this.melOffFor += dt; this.melOnFor = 0; }
+      if (!mel.on && this.melOnFor > 0.12) mel.on = true;
+      if (mel.on && this.melOffFor > 0.35) mel.on = false;
+      if (voiced) {
+        const p = clamp(Math.log2(bestF / 130) / Math.log2(880 / 130));
+        mel.pitch += (p - mel.pitch) * ease(dt, mel.on ? 0.07 : 0.01);
+      }
+      mel.loud += ((voiced ? f.level : 0) - mel.loud) * ease(dt, 0.1);
     }
 
     _chordMode(c) {

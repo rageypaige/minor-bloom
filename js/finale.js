@@ -194,6 +194,56 @@
       yield;
     }
 
+    // The voice: a thread of light across the sky, rising and falling with
+    // the melody and breaking between phrases.
+    {
+      const P = tl.map((s) => (s.p === null || s.p === undefined ? null : s.p));
+      const voiced = P.filter((v) => v !== null);
+      if (voiced.length > 4) {
+        const sorted = voiced.slice().sort((a, b) => a - b);
+        const lo = sorted[Math.floor(sorted.length * 0.05)];
+        const hi = Math.max(lo + 0.15, sorted[Math.floor(sorted.length * 0.95)]);
+        const hue = MB.accentHSL(0, avgMood).h;
+        const core = dark ? { h: hue, s: 45, l: 90 } : { h: hue, s: 40, l: 22 };
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        if (dark) {
+          ctx.shadowColor = MB.hsla({ h: hue, s: 60, l: 80 }, 0.7);
+          ctx.shadowBlur = 14 * k;
+        }
+        ctx.strokeStyle = MB.hsla(core, 0.85);
+        let i = 0;
+        while (i < n) {
+          if (P[i] === null) { i++; continue; }
+          // one phrase, smoothed into a flowing curve
+          const idx = [];
+          for (; i < n && P[i] !== null; i++) idx.push(i);
+          if (idx.length < 3) continue;
+          const ps = smooth(idx.map((j) => P[j]), 3);
+          const pts = idx.map((j, q) => ({
+            x: (j / Math.max(1, n - 1)) * W,
+            y: H * (0.3 - clamp((ps[q] - lo) / (hi - lo)) * 0.16) + MB.noise3(j * 0.1, 3.3, 1) * H * 0.015,
+            v: tl[j].v || 0,
+          }));
+          // taper in and out, thicker where the voice is louder
+          for (let q = 1; q < pts.length; q++) {
+            const a = pts[q - 1], b = pts[q];
+            const c = pts[Math.min(pts.length - 1, q + 1)];
+            const taper = Math.sin(Math.PI * (q / pts.length));
+            ctx.lineWidth = Math.max(0.6, (1.2 + b.v * 5) * taper * k);
+            ctx.beginPath();
+            ctx.moveTo((a.x + b.x) / 2, (a.y + b.y) / 2);
+            ctx.quadraticCurveTo(b.x, b.y, (b.x + c.x) / 2, (b.y + c.y) / 2);
+            ctx.stroke();
+          }
+        }
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
+        yield;
+      }
+    }
+
     // 4. Flowers where the song swells.
     ctx.globalCompositeOperation = glaze;
     const peaks = [];
@@ -206,22 +256,52 @@
       const t = n > 1 ? p.i / (n - 1) : 0.5;
       const x = t * W + (rand() - 0.5) * 60 * k;
       const y = frontTop(x) + H * (0.03 + rand() * 0.12);
-      const r = H * (0.022 + p.v * 0.045);
+      // a burst of tapered petal strokes, like the live flicks
+      const r = H * (0.02 + p.v * 0.035);
       const c = MB.accentHSL(Math.floor(rand() * 4), moodAt(t));
-      const base = MB.deform(MB.polygon(x, y, r, 10, rand), 3, 0.4, rand);
-      for (let L = 0; L < 22; L++) MB.fillPoly(ctx, MB.deform(base, 2, 0.25, rand), MB.hsla(c, 0.06));
-      const heart = dark ? { h: c.h, s: c.s * 0.8, l: Math.min(85, c.l + 20) } : { h: c.h, s: c.s, l: Math.max(12, c.l - 25) };
-      const hb = MB.deform(MB.polygon(x, y, r * 0.3, 8, rand), 2, 0.3, rand);
-      for (let L = 0; L < 10; L++) MB.fillPoly(ctx, MB.deform(hb, 2, 0.2, rand), MB.hsla(heart, 0.07));
+      c.s = Math.min(72, c.s);
+      c.l = dark ? clamp(c.l + 4, 52, 68) : clamp(c.l - 8, 30, 55);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.lineCap = 'round';
+      const petals = 5 + Math.floor(rand() * 4);
+      const turn = rand() * Math.PI * 2;
+      for (let q = 0; q < petals; q++) {
+        let a = turn + (q / petals) * Math.PI * 2 + (rand() - 0.5) * 0.4;
+        const bend = (rand() - 0.5) * 0.6;
+        const len = r * (0.5 + rand() * 0.8);
+        let px = x, py = y;
+        const steps = 8;
+        for (let st = 0; st < steps; st++) {
+          const pr = st / steps;
+          a += bend / steps;
+          const nx = px + Math.cos(a) * (len / steps), ny = py + Math.sin(a) * (len / steps);
+          ctx.strokeStyle = MB.hsla(c, 0.62);
+          ctx.lineWidth = Math.max(0.6, r * 0.2 * Math.sin(Math.PI * (0.15 + pr * 0.85)));
+          ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(nx, ny); ctx.stroke();
+          px = nx; py = ny;
+        }
+      }
+      const heart = dark ? { h: c.h, s: c.s * 0.6, l: 90 } : { h: c.h, s: c.s, l: Math.max(12, c.l - 25) };
+      ctx.fillStyle = MB.hsla(heart, 0.9);
+      for (let q = 0; q < 5; q++) {
+        ctx.beginPath();
+        ctx.arc(x + (rand() - 0.5) * r * 0.2, y + (rand() - 0.5) * r * 0.2, (1 + rand() * 2.5) * k, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = glaze;
       yield;
     }
 
     // 5. Brushwork: faster songs get busier strokes.
     ctx.globalCompositeOperation = 'source-over';
     ctx.lineCap = 'round';
-    const count = Math.round(240 + bpm * 2.4);
+    const Lsh = smooth(tl.map((s) => (s.l === undefined ? 0.5 : s.l)), 4);
+    const avgLush = avg(Lsh);
+    const count = Math.round(120 + bpm * 1.2 + avgLush * 520);
     for (let s = 0; s < count; s++) {
+      // place strokes where the song was full: sample x by fullness
       let x = rand() * W;
+      for (let tries = 0; tries < 4 && rand() > 0.15 + at(Lsh, x / W); tries++) x = rand() * W;
       let y = H * (0.25 + rand() * 0.75);
       const t = clamp(x / W);
       const mood = moodAt(t);

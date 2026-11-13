@@ -8,8 +8,8 @@
     paper: { bg: [242, 235, 223], grain: 0.55, lift: 0, dark: false },
     white: { bg: [250, 250, 248], grain: 0, lift: 0, dark: false },
     mist: { bg: [236, 237, 239], grain: 0.25, lift: 0, dark: false, tinted: true },
-    night: { bg: [15, 16, 26], grain: 0, lift: 26, dark: true },
-    charcoal: { bg: [36, 34, 33], grain: 0, lift: 20, dark: true },
+    night: { bg: [15, 16, 26], grain: 0, lift: 12, sat: 1.22, ink: 1.45, dark: true },
+    charcoal: { bg: [36, 34, 33], grain: 0, lift: 10, sat: 1.15, ink: 1.35, dark: true },
   };
   MB.theme = MB.THEMES.paper;
   MB.themeKey = 'paper';
@@ -143,7 +143,7 @@
     const l = lerp(a[2], b[2], t) + (mood.brightness - 0.5) * 18;
     return {
       h: (mixHue(a[0], b[0], t) + (mood.hueShift || 0) + 360) % 360,
-      s: MB.clamp(lerp(a[1], b[1], t) + (mood.energy - 0.5) * 22, 8, 100),
+      s: MB.clamp((lerp(a[1], b[1], t) + (mood.energy - 0.5) * 22) * (MB.theme.sat || 1), 8, 100),
       // on dark grounds, lift dark colours most and light ones least
       l: MB.clamp(l + lift * (1 - l / 100) * 1.4, 10, 92),
     };

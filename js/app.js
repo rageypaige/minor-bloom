@@ -25,7 +25,8 @@
 
   // Gentle brushwork behind the start screen.
   const idleMood = {
-    energy: 0.12, mode: 0.55, brightness: 0.55, hueShift: 0, bpm: 70,
+    energy: 0.12, level: 0.12, lush: 0.12, mode: 0.55, brightness: 0.55, hueShift: 0, bpm: 70,
+    melody: { on: false, pitch: 0.5, loud: 0 },
     beat: false, beatStrength: 0, silent: false,
   };
 
@@ -225,7 +226,10 @@
       if (recTimer >= 0.25) {
         recTimer = 0;
         if (!f.silent || timeline.length) {
-          timeline.push({ t: an.elapsed, e: f.silent ? 0 : f.energy, b: f.brightness, m: f.mode, bpm: f.bpm });
+          timeline.push({
+            t: an.elapsed, e: f.silent ? 0 : f.energy, b: f.brightness, m: f.mode, bpm: f.bpm, l: f.lush,
+            p: f.melody.on ? f.melody.pitch : null, v: f.melody.loud,
+          });
         }
       }
       hudTimer += dt;
@@ -260,7 +264,7 @@
   });
 
   // For testing from the console.
-  MB.debug = { get listener() { return listener; }, get timeline() { return timeline; }, finish };
+  MB.debug = { painter, get listener() { return listener; }, get timeline() { return timeline; }, finish };
 
   requestAnimationFrame(frame);
 })();
