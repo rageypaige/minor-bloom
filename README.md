@@ -33,9 +33,9 @@ phone with **audio file**.
 Switch on the start screen (*atmosphere · paint*); your choice is remembered.
 
 - **Atmosphere** (default): soft fields of coloured light suspended in a deep
-  charcoal fog, with fine film grain and a few crisp points. Three layers give
+  charcoal fog, with fine film grain and a few crisp points. Layers give
   depth: distant colour fields that barely move, midground washes, blooms,
-  veils and wisps with flowing texture, and a few small foreground lights.
+  veils and wisps with flowing texture.
   Forms open out like ink in water and drift on one slow current; traces of
   earlier moments linger and diffuse. Volume sets how full and luminous they
   are; bass gently swells and displaces the larger forms; the midrange moves

@@ -20,10 +20,9 @@
 //              an arrival breaks it open in a large luminous bloom
 //   phrases -> the whole scene slowly breathes over each phrase (16 beats)
 //
-// Depth comes from three layers with different speeds and lifespans:
+// Depth comes from layers with different speeds and lifespans:
 //   distant  - broad, barely visible colour fields, very slow
 //   midground - washes, blooms, veils and wisps with flowing texture
-//   foreground - a few small concentrated lights, more sharply defined
 // Far behind it all is a faint night sky: sparse stars that twinkle slowly,
 // hide behind bright fog, show more in quiet passages, and now and then
 // glint with a cymbal or a bright high note.
@@ -31,7 +30,7 @@
   const MB = (window.MB = window.MB || {});
   const clamp = MB.clamp;
   const rnd = (a, b) => a + Math.random() * (b - a);
-  const MAXF = 12, MAXP = 24, MAXE = 6, MAXS = 70;
+  const MAXF = 12, MAXP = 24, MAXS = 70;
   const ease = (dt, tau) => 1 - Math.exp(-dt / tau);
   const angleTo = (d) => Math.atan2(Math.sin(d), Math.cos(d));
 
@@ -126,26 +125,12 @@ precision highp float;
 uniform sampler2D u_scene, u_trace; uniform vec2 u_res;
 uniform float u_time, u_exposure, u_traceMix, u_vig; uniform vec3 u_base;
 uniform vec4 u_pts[${MAXP}]; uniform int u_np;
-uniform vec4 u_emb[${MAXE}]; uniform vec3 u_embC[${MAXE}]; uniform int u_ne;
 uniform vec4 u_stars[${MAXS}]; uniform int u_ns;
 out vec4 o;
 ${NOISE}
 void main(){
   vec2 uv = gl_FragCoord.xy / u_res;
   vec3 L = texture(u_scene, uv).rgb * .8 + texture(u_trace, uv).rgb * u_traceMix;
-  // foreground: small concentrated lights, more sharply defined than the
-  // clouds, with uneven edges of their own
-  for (int i = 0; i < ${MAXE}; i++) {
-    if (i >= u_ne) break;
-    vec4 Em = u_emb[i];
-    vec2 dd = (gl_FragCoord.xy - Em.xy) / Em.z;
-    float rr = length(dd);
-    if (rr > 4.) continue;
-    rr += (fbm(dd * 1.6 + Em.xy * .013) - .47) * 1.1 + (noise(dd * 4. + Em.xy * .02) - .5) * .35;
-    float de = exp(-rr * rr * 2.6);
-    de *= smoothstep(.02, .5, de + (noise(dd * 6. + u_time * .3) - .5) * .25);
-    L += u_embC[i] * Em.w * de;
-  }
   // the night sky behind it all: faint stars that hide behind bright fog
   float fog = dot(L, vec3(.3, .59, .11));
   float clear = 1. - smoothstep(.04, .35, fog);
@@ -296,7 +281,6 @@ void main(){
       if (!this.stars) this._makeStars();
       this.forms = [];
       this.points = [];
-      this.embers = [];
       this.domCool = rnd(40, 70);
       for (const tr of this.traces) {
         this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, tr.fb);
@@ -649,25 +633,6 @@ void main(){
       for (const p of this.points) p.age += dt;
       this.points = this.points.filter((p) => p.age < p.life);
 
-      // FOREGROUND: a few small concentrated lights, brought by bright highs
-      // and peaks; they drift a little faster than everything behind them
-      const er = high * high * 0.35 + peak * 0.5 + (f.spark ? 0.15 : 0);
-      if (hosts.length && this.embers.length < MAXE && Math.random() < er * dt) {
-        const g = hosts[Math.floor(Math.random() * hosts.length)];
-        const c = g.col || [0.6, 0.6, 0.6];
-        this.embers.push({
-          x: g.x + MB.gauss() * g.size * 0.5, y: g.y + MB.gauss() * g.size * 0.5,
-          r: rnd(0.008, 0.02) * (0.8 + 0.5 * vol), age: 0, life: rnd(3, 9),
-          col: c.map((v) => Math.min(1, v * 1.15 + 0.05)), bright: rnd(0.45, 0.8),
-        });
-      }
-      for (const e of this.embers) {
-        e.age += dt;
-        e.x += MB.noise3(e.x * 0.6, e.y * 0.6, t * 0.015) * 0.035 * dt;
-        e.y += MB.noise3(e.x * 0.6 + 7.1, e.y * 0.6, t * 0.015) * 0.026 * dt;
-      }
-      this.embers = this.embers.filter((e) => e.age < e.life);
-
       // NIGHT SKY: a very slow drift; highs make a star glint now and then
       this.skyVis = (this.skyVis ?? 0.6) + (clamp(0.5 + 0.45 * this.quiet - 0.25 * lush) - (this.skyVis ?? 0.6)) * ease(dt, 4);
       for (const st of this.stars) {
@@ -809,17 +774,6 @@ void main(){
       }
       gl.uniform4fv(P.u.u_pts, pts);
       gl.uniform1i(P.u.u_np, np);
-      const em = new Float32Array(MAXE * 4), emc = new Float32Array(MAXE * 3);
-      let ne = 0;
-      for (const e of this.embers) {
-        const life = Math.min(1, e.age / 0.8) * Math.min(1, (e.life - e.age) / 2.5);
-        em.set([(e.x / this.asp + 0.5) * this.c.width, (e.y + 0.5) * this.c.height, e.r * this.c.height, e.bright * life * 0.9], ne * 4);
-        emc.set(e.col, ne * 3);
-        ne++;
-      }
-      gl.uniform4fv(P.u.u_emb, em);
-      gl.uniform3fv(P.u.u_embC, emc);
-      gl.uniform1i(P.u.u_ne, ne);
       const sa = new Float32Array(MAXS * 4);
       let ns = 0;
       for (const st of this.stars) {
