@@ -34,7 +34,7 @@
   <div id="hud" hidden>
     <p id="mood"><span id="mood-word">listening…</span> <span id="mood-detail"></span></p>
     <nav class="links">
-      <button id="btn-clear" title="Wipe the canvas and keep painting. The finished painting still includes the whole song.">clear</button>
+      <button id="btn-clear" title="Start the canvas over and keep painting.">clear</button>
       <span class="dot">·</span>
       <button id="btn-finish">finish</button>
     </nav>
@@ -42,7 +42,7 @@
 
   <!-- Finished painting -->
   <section id="finale" hidden>
-    <div class="frame"><canvas id="final" width="2400" height="1600"></canvas></div>
+    <div class="frame"><canvas id="final"></canvas></div>
     <input id="title" type="text" placeholder="name this painting" maxlength="80">
     <p id="caption"></p>
     <nav class="links">
@@ -55,7 +55,6 @@
   <script src="js/brush.js"></script>
   <script src="js/listener.js"></script>
   <script src="js/painter.js"></script>
-  <script src="js/finale.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

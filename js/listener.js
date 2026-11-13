@@ -111,7 +111,9 @@
       let sq = 0;
       for (let i = 0; i < this.wave.length; i++) sq += this.wave[i] * this.wave[i];
       const rms = Math.sqrt(sq / this.wave.length);
-      this.peak = Math.max(rms, this.peak * Math.exp(-dt / 25), 0.01);
+      // compare against the loudest *sustained* level, not single drum hits
+      this.rmsS = (this.rmsS || 0) + (rms - (this.rmsS || 0)) * ease(dt, 0.4);
+      this.peak = Math.max(this.rmsS, this.peak * Math.exp(-dt / 25), 0.01);
       f.rms = rms;
       f.silent = rms < 0.003;
       f.level = clamp(rms / this.peak);

@@ -1,7 +1,8 @@
 # Minor Bloom
 
-A painterly audio visualizer. Play a song and watch it paint itself as a moving
-watercolor, then see it gathered into one finished painting of the whole song.
+Minor Bloom paints a unique abstract painting from a song. As the track plays,
+brush marks accumulate into one composition; when it ends, you can save the
+finished artwork.
 
 ## How to use it
 
@@ -18,24 +19,35 @@ watercolor, then see it gathered into one finished painting of the whole song.
 4. Keep the Minor Bloom window visible while it paints. Browsers pause pages
    hidden in background tabs, so put the windows side by side or start the song
    and switch back.
-5. Click **Finish painting** when the song ends (or stop sharing). The finished
-   painting builds itself; name it and click **Save painting** for a PNG.
+5. When the song ends (or you click **finish**, or stop sharing), painting stops
+   and the canvas is kept exactly as it is. Name it and click **save painting**
+   for a PNG. **clear** starts the canvas over.
 
 ## What it listens for
 
 | In the music | In the painting |
 | --- | --- |
-| Major vs minor (key and current chord) | Warm golds, corals and roses ↔ deep indigos, violets and teals |
+| Major vs minor (key and current chord) | Warm golds, corals and roses ↔ deep indigos, violets and teals, blended gradually |
 | The key itself | A gentle hue shift, following the circle of fifths |
-| Loudness | How many brushes paint, how wide and saturated they are |
-| Tempo | How fast the brushes travel and how lively the strokes are |
-| Brightness of tone | Lighter or darker paint |
-| Accents and beats | Watercolor blooms that spread across the page |
+| Tempo | The rhythm of mark-making (marks fall on a beat clock) and how quickly strokes are laid down |
+| Volume | Brush size, pressure and pigment opacity |
+| How full the arrangement is | How many marks layer up and how varied they are, from fine details and dry brush to loaded strokes and washes |
+| Strong accents | Short, loaded strokes |
+| Peaks | Occasional bold gestures |
+| The lead melody (usually the voice) | A fine line that rises and falls with pitch |
 
-The finished painting reads left to right like the song itself: loudness
-shapes the hills, harmony colours them, the biggest moments flower, and a sun
-or moon rises over the loudest moment depending on whether the song leans major
-or minor.
+## How it paints
+
+- **Marks are physical.** Each stroke is painted by a set of bristles. It has a
+  touch-down, a weighted body and a taper, and its pigment runs out as it goes.
+  The surface has a texture, and paint only catches where there's enough
+  pigment, so edges break up and the ground shows through.
+- **Nothing fades.** Marks stay where they land, and earlier passages show
+  beneath later ones. Occasional translucent washes link passages without
+  covering them.
+- **One composition.** Marks gather in a few related areas, each with its own
+  direction. New marks continue, run alongside or cross earlier ones, and the
+  painter keeps some open space.
 
 Key and tempo detection are estimates. They are usually close, but can mix up
 relative keys (for example C major and A minor) or settle on half or double
@@ -45,9 +57,8 @@ the tempo.
 
 - `index.html`, `css/style.css`: the page
 - `js/listener.js`: audio capture and analysis (loudness, brightness, key, chords, tempo)
-- `js/painter.js`: the live painting
-- `js/finale.js`: the finished painting
-- `js/brush.js`: shared noise, watercolor shapes and palettes
+- `js/painter.js`: the brush, the composition and the painting itself
+- `js/brush.js`: shared noise, palettes and canvas grounds
 - `js/app.js`: ties it all together
 
 The canvas is midnight by default. To try other grounds, add `?bg=paper`,

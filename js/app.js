@@ -19,7 +19,6 @@
   let listener = null;
   let timeline = [];
   let recTimer = 0, hudTimer = 0, quietTimer = 0;
-  let finaleGen = null;
   let summary = null;
   let last = performance.now();
 
@@ -55,7 +54,7 @@
     }
     listener = l;
     l.onEnded = finish;
-    painter.clear();
+    painter.begin();
     timeline = [];
     recTimer = hudTimer = quietTimer = 0;
     resetHud();
@@ -72,12 +71,12 @@
     const an = listener.analyzer;
     summary = an.summary();
     const heard = an.heard;
-    const hueShift = an.f.hueShift;
     listener.stop();
     listener = null;
     show($('#hud'), false);
 
     if (timeline.length < 12 || heard < 3) {
+      painter.clear();
       state = 'intro';
       show($('#intro'), true);
       setError('That was too short or too quiet to paint. Let it listen for at least a few seconds of music.');
@@ -95,16 +94,16 @@
     summary.bpm = Math.round(bpm);
     summary.caption = `${dur} · leaning ${summary.keyName} · about ${summary.bpm} bpm · ${MB.moodWord(0.5 * avgMode + 0.5 * summary.modeValue, avgEnergy)}`;
     $('#caption').textContent = summary.caption;
-    $('#btn-save').disabled = true;
-    $('#btn-save').textContent = 'painting…';
-    show($('#finale'), true);
-    const seed = Math.floor(timeline.reduce((a, s, i) => a + s.e * 1000 * (i + 1), 0)) || 7;
-    finaleGen = MB.paintFinale(fctx, finalCanvas.width, finalCanvas.height, timeline, { seed, hueShift, bpm });
-  }
 
-  function finaleDone() {
+    // Stop adding marks and keep the painting exactly as it stands.
+    const art = painter.stop();
+    finalCanvas.width = art.width;
+    finalCanvas.height = art.height;
+    fctx.drawImage(art, 0, 0);
+    $('.frame').style.aspectRatio = `${art.width} / ${art.height}`;
     $('#btn-save').disabled = false;
     $('#btn-save').textContent = 'save painting';
+    show($('#finale'), true);
   }
 
   function save() {
@@ -115,15 +114,16 @@
     const c = out.getContext('2d');
     c.drawImage(finalCanvas, 0, 0);
     const title = $('#title').value.trim();
+    const k = Math.min(W, H) / 1350;
     c.textAlign = 'right';
     c.fillStyle = MB.theme.dark ? 'rgba(244, 240, 234, 0.8)' : 'rgba(30, 24, 34, 0.72)';
     if (title) {
-      c.font = '56px "Cormorant Garamond", Georgia, serif';
-      c.fillText(title, W - 70, H - 108);
+      c.font = `${Math.round(56 * k)}px "Cormorant Garamond", Georgia, serif`;
+      c.fillText(title, W - 70 * k, H - 108 * k);
     }
-    c.font = '26px Inter, system-ui, sans-serif';
+    c.font = `${Math.round(26 * k)}px Inter, system-ui, sans-serif`;
     c.fillStyle = MB.theme.dark ? 'rgba(244, 240, 234, 0.55)' : 'rgba(30, 24, 34, 0.55)';
-    c.fillText(`${summary.caption} · Minor Bloom`, W - 70, H - 62);
+    c.fillText(`${summary.caption} · Minor Bloom`, W - 70 * k, H - 62 * k);
     out.toBlob((blob) => {
       const a = document.createElement('a');
       const slug = (title || 'painting').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -135,7 +135,6 @@
   }
 
   function again() {
-    finaleGen = null;
     state = 'intro';
     show($('#finale'), false);
     show($('#intro'), true);
@@ -238,12 +237,6 @@
       if (quietTimer > 6) $('#hud').classList.add('quiet');
     }
 
-    if (finaleGen) {
-      const t0 = performance.now();
-      while (performance.now() - t0 < 12) {
-        if (finaleGen.next().done) { finaleGen = null; finaleDone(); break; }
-      }
-    }
     requestAnimationFrame(frame);
   }
 
