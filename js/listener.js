@@ -409,6 +409,13 @@
       this.onEnded = null;
     }
 
+    // Phones (iPhones especially) only let sound start during the tap itself,
+    // so the audio context is created and woken before anything is awaited.
+    _unlock() {
+      if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+    }
+
     async _context() {
       if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
       if (this.ctx.state === 'suspended') await this.ctx.resume();
@@ -416,6 +423,7 @@
     }
 
     async fromDevice() {
+      this._unlock();
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
         throw new Error('This browser can’t listen to other tabs or apps. Try Chrome or Edge on a computer, or use the microphone.');
       }
@@ -439,6 +447,7 @@
     }
 
     async fromMic() {
+      this._unlock();
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('This browser doesn’t allow microphone access here.');
       }
@@ -451,6 +460,7 @@
     }
 
     async fromFile(file) {
+      this._unlock();
       const ctx = await this._context();
       const el = (this.audioEl = new Audio());
       el.src = URL.createObjectURL(file);

@@ -23,6 +23,11 @@ finished artwork.
    and the canvas is kept exactly as it is. Name it and click **save painting**
    for a PNG. **clear** starts the canvas over.
 
+**On a phone:** phones don't let websites hear other apps, so Minor Bloom
+can't listen to Spotify playing on the same phone. Play the song on another
+speaker or computer and choose **microphone**, or pick a song saved on the
+phone with **audio file**.
+
 ## Two styles
 
 Switch on the start screen (*atmosphere · paint*); your choice is remembered.

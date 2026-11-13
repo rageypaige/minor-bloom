@@ -17,8 +17,8 @@
   <main id="intro">
     <h1>minor bloom</h1>
     <nav class="links">
-      <button id="btn-device">listen to a tab</button>
-      <span class="dot">·</span>
+      <button id="btn-device" class="tab-only">listen to a tab</button>
+      <span class="dot tab-only">·</span>
       <button id="btn-mic">microphone</button>
       <span class="dot">·</span>
       <label class="file-btn">audio file<input id="file" type="file" accept="audio/*" hidden></label>
@@ -29,7 +29,12 @@
       <span class="dot">·</span>
       <button data-view="paint">paint</button>
     </nav>
-    <details class="help">
+    <details class="help phone-only">
+      <summary>on a phone?</summary>
+      <p>Phones don’t let websites hear other apps, so Minor Bloom can’t listen to Spotify playing on this phone.</p>
+      <p>Instead, play your song on another speaker or computer and choose <em>microphone</em>, or pick a song saved on your phone with <em>audio file</em>.</p>
+    </details>
+    <details class="help tab-only">
       <summary>using spotify?</summary>
       <p>In Chrome or Edge, play your song at open.spotify.com in another tab. Click <em>listen to a tab</em>, choose that tab and turn on <em>Share tab audio</em>. Keep this window visible while it paints.</p>
       <p>On Windows you can share your entire screen with <em>Share system audio</em> on instead, which works with the Spotify app.</p>

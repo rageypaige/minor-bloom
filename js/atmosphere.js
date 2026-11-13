@@ -275,7 +275,9 @@ void main(){
       const seed = rnd(0, 50);
       this.stars = [];
       let tries = 0;
-      while (this.stars.length < MAXS && tries++ < 4000) {
+      // the same sparseness on any screen: fewer stars on a small one
+      const want = Math.round(clamp((window.innerWidth * window.innerHeight) / (1280 * 800), 0.35, 1) * MAXS);
+      while (this.stars.length < want && tries++ < 4000) {
         const x = Math.random(), y = Math.random();
         // gather in some regions, leave others empty
         const dens = 0.5 + 0.5 * MB.noise3(x * 2.2, y * 2.2, seed);

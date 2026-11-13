@@ -8,6 +8,10 @@
   document.documentElement.dataset.ground = MB.theme.dark ? 'dark' : 'light';
   document.documentElement.style.setProperty('--bg', MB.PAPER);
 
+  // Listening to a tab or the whole computer only exists in desktop browsers.
+  const canTab = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+  document.documentElement.dataset.tab = canTab ? 'yes' : 'no';
+
   const painter = new MB.LivePainter($('#live'));
   const wet = new MB.FlowLayer(document.createElement('canvas'));
 
