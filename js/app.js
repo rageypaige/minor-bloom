@@ -103,6 +103,9 @@
     finalCanvas.height = art.height;
     fctx.drawImage(art, 0, 0);
     $('.frame').style.aspectRatio = `${art.width} / ${art.height}`;
+    finalCanvas.classList.remove('reveal');
+    void finalCanvas.offsetWidth; // restart the reveal animation
+    finalCanvas.classList.add('reveal');
     $('#btn-save').disabled = false;
     $('#btn-save').textContent = 'save painting';
     show($('#finale'), true);
@@ -227,8 +230,9 @@
       const f = an.update(dt);
       painter.update(f, dt);
       wet.update(f, dt);
-      // while listening the moving paint leads; the painting waits beneath
-      painter.render(wet, 0.62);
+      // while listening you see only the moving paint; the painting builds
+      // out of sight and is revealed when the song ends
+      painter.render(wet, 0);
       recTimer += dt;
       if (recTimer >= 0.25) {
         recTimer = 0;

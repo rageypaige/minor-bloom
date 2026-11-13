@@ -41,8 +41,8 @@ finished artwork.
 While the song plays you watch **wet paint**: brushes that flow with the music
 in real time, sparse when it's just a voice and a guitar and lush when the band
 comes in, with bright flicks on accents and a glowing line for the voice. It
-dries away after a few seconds. Beneath it, a **permanent painting** builds up
-slowly; that's what remains when the song ends, and what you save.
+dries away after a few seconds. Out of sight, a **permanent painting** builds up
+slowly; it's revealed when the song ends, and that's what you save.
 
 The permanent painting:
 
