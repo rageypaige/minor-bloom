@@ -28,14 +28,17 @@ finished artwork.
 Switch on the start screen (*atmosphere · paint*); your choice is remembered.
 
 - **Atmosphere** (default): soft fields of coloured light suspended in a deep
-  charcoal fog, with fine film grain and a few crisp points. Forms swell,
-  stretch, fold and dissolve with the music, and traces of earlier moments
-  linger and slowly diffuse. Volume sets how full and luminous the forms are;
-  bass swells them and sends slow pressure ripples through one form at a time;
-  the midrange folds and moves them; high frequencies scatter fine points and
-  shimmer; tempo sets the cadence of gestures; a fuller arrangement brings more
-  layers. **finish** keeps a still of the moment you can save. Needs a browser
-  with WebGL2 (Chrome, Edge, Safari, Firefox); without it, paint is used.
+  charcoal fog, with fine film grain and a few crisp points. Three layers give
+  depth: distant colour fields that barely move, midground washes, blooms,
+  veils and wisps with flowing texture, and a few small foreground lights.
+  Forms open out like ink in water and drift on one slow current; traces of
+  earlier moments linger and diffuse. Volume sets how full and luminous they
+  are; bass gently swells and displaces the larger forms; the midrange moves
+  their insides; high frequencies bring fleeting points and small lights;
+  tempo sets the cadence of gestures; fuller, more upbeat music blooms more.
+  At peaks a single broad form can take over, then dissolve into smaller ones.
+  Quiet passages soften and open up. **finish** keeps a still you can save.
+  Needs WebGL2 (current Chrome, Edge, Safari, Firefox); otherwise paint is used.
 - **Paint**: flowing brushwork while you listen, with a permanent textured
   painting revealed at the end.
 
@@ -74,8 +77,10 @@ The permanent painting:
   painter keeps some open space.
 
 Key and tempo detection are estimates. They are usually close, but can mix up
-relative keys (for example C major and A minor) or settle on half or double
-the tempo.
+relative keys (for example C major and A minor). Tempo is read over about 12
+seconds and folded into 72-144 bpm, so very slow or very fast songs show as
+double or half time; it changes only when a new tempo holds for a few seconds,
+and then glides there.
 
 ## Project layout
 

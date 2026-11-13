@@ -224,9 +224,11 @@
       // Tempo from the autocorrelation of the onset envelope.
       this.env.push(flux);
       this.envDt.push(dt);
-      if (this.env.length > 480) { this.env.shift(); this.envDt.shift(); }
+      if (this.env.length > 720) { this.env.shift(); this.envDt.shift(); }
       this.tempoTimer += dt;
       if (this.tempoTimer > 1) { this.tempoTimer = 0; this._tempo(); }
+      // the tempo everyone else sees glides; it never jumps
+      if (this.tempo && this.tempo.target) f.bpm += (this.tempo.target - f.bpm) * ease(dt, 4);
       return f;
     }
 
@@ -311,26 +313,59 @@
       return clamp(0.5 + (maj - min) * 3);
     }
 
+    // Tempo from the autocorrelation of the onset envelope, over ~12 s.
+    // Half- and double-time readings are scored together and folded into
+    // one octave (72-144 bpm), so a song doesn't flip between 84 and 168.
+    // A new tempo must hold for a few seconds before it's accepted, and the
+    // value everything else sees glides toward it (see update()).
     _tempo() {
       const n = this.env.length;
-      if (n < 180) return;
+      if (n < 240) return;
       let dtSum = 0, mean = 0;
       for (let i = 0; i < n; i++) { dtSum += this.envDt[i]; mean += this.env[i]; }
       const dt = dtSum / n;
       mean /= n;
       const x = this.env.map((v) => v - mean);
-      const minLag = Math.max(1, Math.floor(60 / 180 / dt));
-      const maxLag = Math.min(n - 2, Math.ceil(60 / 60 / dt));
-      let best = 0, bestBpm = 0;
-      for (let lag = minLag; lag <= maxLag; lag++) {
+      // autocorrelation at a given tempo (interpolated between lags)
+      const cache = new Map();
+      const acLag = (lag) => {
+        if (cache.has(lag)) return cache.get(lag);
         let s = 0;
         for (let i = lag; i < n; i++) s += x[i] * x[i - lag];
         s /= n - lag;
-        const bpm = 60 / (lag * dt);
-        const w = Math.exp(-0.5 * Math.pow(Math.log2(bpm / 115) / 0.8, 2));
-        if (s * w > best) { best = s * w; bestBpm = bpm; }
+        cache.set(lag, s);
+        return s;
+      };
+      const ac = (bpm) => {
+        const L = 60 / (bpm * dt);
+        if (L < 1 || L > n - 2) return 0;
+        const l0 = Math.floor(L), fr = L - l0;
+        return acLag(l0) * (1 - fr) + acLag(l0 + 1) * fr;
+      };
+      let best = 0, bestBpm = 0, sum = 0, cnt = 0;
+      for (let bpm = 72; bpm <= 144; bpm += 0.5) {
+        const sc = ac(bpm) + 0.5 * ac(bpm * 2) + 0.5 * ac(bpm / 2)
+          + 0.25 * ac(bpm * 1.5); // a little help for compound metres
+        const w = Math.exp(-0.5 * Math.pow(Math.log2(bpm / 105) / 0.9, 2));
+        const v = sc * w;
+        sum += Math.max(0, v); cnt++;
+        if (v > best) { best = v; bestBpm = bpm; }
       }
-      if (bestBpm) this.f.bpm += (bestBpm - this.f.bpm) * 0.3;
+      if (!bestBpm || best <= 0) return;
+      const conf = best / (sum / cnt + 1e-9);
+      this.f.bpmRaw = bestBpm;
+      const T = (this.tempo = this.tempo || { target: 0, cand: 0, hold: 0 });
+      if (!T.target) { T.target = bestBpm; return; }
+      // close to the current tempo: refine it gently
+      if (Math.abs(bestBpm / T.target - 1) < 0.05) {
+        T.target += (bestBpm - T.target) * 0.25;
+        T.cand = 0; T.hold = 0;
+        return;
+      }
+      // a different tempo has to persist (and be clear) before it's accepted
+      if (T.cand && Math.abs(bestBpm / T.cand - 1) < 0.05) T.hold++;
+      else { T.cand = bestBpm; T.hold = 1; }
+      if (T.hold >= 4 && conf > 1.3) { T.target = T.cand; T.cand = 0; T.hold = 0; }
     }
 
     // Whole-song key estimate.
