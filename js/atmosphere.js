@@ -306,12 +306,15 @@ void main(){
     _pickKind(f) {
       const vol = this.vol, lush = (f.lush || 0) * (0.35 + 0.65 * (this.drive ?? 0.5)), up = this.up || 0;
       const quiet = clamp(1 - vol * 1.5);
-      const w = {
-        wash: 0.25 + 0.45 * quiet,
-        bloom: 0.2 + 0.5 * up,
-        veil: 0.15 + 0.35 * lush,
-        wisp: 0.15 + 0.45 * lush * (1 - quiet),
-      };
+      const w = this.idle
+        // the start screen: mostly soft blooms, a wash or veil now and then
+        ? { wash: 0.25, bloom: 0.6, veil: 0.15, wisp: 0.05 }
+        : {
+          wash: 0.25 + 0.45 * quiet,
+          bloom: 0.2 + 0.5 * up,
+          veil: 0.15 + 0.35 * lush,
+          wisp: 0.15 + 0.45 * lush * (1 - quiet),
+        };
       // avoid repeating the same kind of shape across the screen
       for (const g of this.forms) if (w[g.kind] !== undefined && g.age < g.span) w[g.kind] *= 0.55;
       let sum = 0;
@@ -335,7 +338,9 @@ void main(){
           const y = clamp(fp.y + MB.gauss() * spread, -0.58, 0.58);
           let room = 1;
           for (const g of this.forms) if (KINDS[g.kind].layer === K.layer) room = Math.min(room, Math.hypot(g.x - x, g.y - y) / (g.size + 0.1));
-          const score = (kind === 'field' ? 0 : Math.min(room, 2)) + rnd(0, 0.3);
+          // on the start screen, keep the middle clear for the title
+          const behindText = this.idle && Math.abs(x) < 0.32 * A && Math.abs(y) < 0.2 ? 1.5 : 0;
+          const score = (kind === 'field' ? 0 : Math.min(room, 2)) + rnd(0, 0.3) - behindText;
           if (score > bestScore) { bestScore = score; best = { x, y }; }
         }
       }
@@ -420,6 +425,7 @@ void main(){
     }
 
     update(f, dt) {
+      this.idle = !!f.idle;
       // DRIVE: how rhythmically driven the music is. Drums and cymbals bring
       // high-frequency hiss and sharp bass hits; a piano, strings or a voice
       // hardly any. Without drive, busy or wide-ranging music still reads as
@@ -480,7 +486,7 @@ void main(){
       const intensity = this.intensity;
 
       // how vivid colour is: deeper at emotional high points, toward grey in quiet
-      this.satMul = clamp(0.9 + 0.5 * release + 0.25 * peak - 0.25 * this.quiet - 0.15 * tension, 0.45, 1.5);
+      this.satMul = this.idle ? 1.15 : clamp(0.9 + 0.5 * release + 0.25 * peak - 0.25 * this.quiet - 0.15 * tension, 0.45, 1.5);
 
       // BREATHING: one slow inhale and exhale per phrase (16 beats)
       this.phase = (this.phase ?? 0) + (dt * Math.PI * 2) / (16 * (60 / clamp(this.bpm, 50, 190)));
@@ -507,11 +513,11 @@ void main(){
 
       // DENSITY: how many midground forms there are
       const mids = this.forms.filter((x) => KINDS[x.kind].layer === 1 && x.age < x.span);
-      const want = Math.min(7, Math.round(1 + lush * 2.5 + vol * 0.8 + up * 2.2));
+      const want = this.idle ? 4 : Math.min(7, Math.round(1 + lush * 2.5 + vol * 0.8 + up * 2.2));
       this.spawnCool -= dt;
       if (mids.length < want && this.spawnCool <= 0 && !f.silent && this.forms.length < MAXF) {
         this._spawn(this._pickKind(f));
-        this.spawnCool = rnd(1.5, 4) * (1 - up * 0.55);
+        this.spawnCool = this.idle ? rnd(0.6, 1.4) : rnd(1.5, 4) * (1 - up * 0.55);
       }
       if (mids.length > want + 1) {
         const oldest = mids.filter((x) => !x.dom).reduce((a, b) => (a.age / a.span > b.age / b.span ? a : b), mids[0]);
@@ -568,7 +574,7 @@ void main(){
         // drift on one shared current; distant fields barely move
         const cx = MB.noise3(g.x * 0.6, g.y * 0.6, t * 0.015) * 0.022;
         const cy = MB.noise3(g.x * 0.6 + 7.1, g.y * 0.6, t * 0.015) * 0.016;
-        const pull = K.layer === 0 ? 0 : 0.018 * (1 + 3 * tension);
+        const pull = K.layer === 0 || this.idle ? 0 : 0.018 * (1 + 3 * tension);
         const sp = K.drift * (0.5 + mid * 0.8);
         g.x += (cx * sp - (g.x - this.focus.x) * pull) * dt;
         g.y += (cy * sp - (g.y - this.focus.y) * pull) * dt;
@@ -674,8 +680,8 @@ void main(){
       const up = this.up || 0, quiet = this.quiet ?? 0.5;
       const tension = this.tension || 0, release = this.release || 0;
       const intensity = this.intensity ?? 0.5;
-      const sizeK = 0.62 + 0.38 * intensity;   // gentle songs: smaller forms
-      const lightK = 0.5 + 0.5 * intensity;    // gentle songs: softer light
+      const sizeK = this.idle ? 0.95 : 0.62 + 0.38 * intensity;   // gentle songs: smaller forms
+      const lightK = this.idle ? 1.7 : 0.5 + 0.5 * intensity;    // gentle songs: softer light
       // breathing, a little deeper when the music is fuller
       const depth = 0.35 + 0.65 * clamp(vol * 1.3);
       const br = ((this.breath ?? 0.5) - 0.5) * 2 * depth;          // -1 .. 1

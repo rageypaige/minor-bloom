@@ -25,12 +25,17 @@
   let last = performance.now();
 
   // A calm sky behind the start screen.
+  // A few soft blooms drifting slowly, their colours shifting between warm
+  // and cool over a minute or so.
   const idleMood = {
-    energy: 0.12, level: 0.12, lush: 0.12, mode: 0.55, brightness: 0.55, hueShift: 0, bpm: 70,
+    idle: true,
+    energy: 0.45, level: 0.55, lush: 0.3, mode: 0.55, brightness: 0.55, hueShift: 0, bpm: 70,
     melody: { on: false, pitch: 0.5, loud: 0 },
     beat: false, beatStrength: 0, silent: false,
-    bass: 0.1, mid: 0.2, high: 0.05, bassHit: 0, spark: 0,
+    bass: 0.12, mid: 0.3, high: 0.04, bassHit: 0, spark: 0,
+    rms: 0.07, dbg: { hi: 3e-4 },
   };
+  let idleT = Math.random() * 100;
 
   function show(el, on) { el.hidden = !on; }
   function setError(msg) { const e = $('#error'); e.textContent = msg || ''; show(e, !!msg); }
@@ -165,6 +170,7 @@
     show($('#intro'), true);
     setError('');
     $('#title').value = '';
+    atmos.reset();
   }
 
   // The mood readout only changes on a real shift in the song: it follows a
@@ -238,6 +244,9 @@
     if (!atmos) {
       // nothing to draw without WebGL2
     } else if (state === 'intro') {
+      idleT += dt;
+      idleMood.mode = 0.5 + 0.35 * Math.sin(idleT / 25);
+      idleMood.hueShift = 10 * Math.sin(idleT / 37);
       atmos.update(idleMood, dt);
     } else if (state === 'listening' && listener && listener.analyzer) {
       const an = listener.analyzer;
