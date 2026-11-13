@@ -71,7 +71,8 @@ h1 {
 }
 #mood-word { font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-size: 24px; line-height: 1.1; }
 #mood-detail { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
-#btn-finish { background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.hud-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.hud-actions button { background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 
 #finale {
   position: fixed; inset: 0; background: var(--paper);

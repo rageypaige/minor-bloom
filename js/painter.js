@@ -80,18 +80,28 @@
       });
     }
 
+    // A small, deliberate dab of paint on each accent, sized by how loud that
+    // moment is, and placed on a brush that is painting right now.
     _makeBloom(f) {
-      const r = (35 + f.beatStrength * 80 + f.energy * 60) * this.scale;
-      const fo = this._focus();
-      const x = fo.x + MB.gauss() * this.w * 0.2;
-      const y = fo.y + MB.gauss() * this.h * 0.2;
-      const accent = Math.random() < 0.4;
-      const idx = Math.floor(Math.random() * 6);
-      const color = accent ? MB.accentHSL(idx, f) : MB.moodHSL(idx, f);
+      const loud = MB.clamp(f.level * 0.8 + f.beatStrength * 0.2);
+      const r = (5 + loud * loud * 34) * this.scale;
+      let x, y;
+      if (this.agents.length) {
+        const a = this.agents[Math.floor(Math.random() * this.agents.length)];
+        x = a.x;
+        y = a.y;
+      } else {
+        const fo = this._focus();
+        x = fo.x;
+        y = fo.y;
+      }
+      const idx = Math.floor(Math.random() * 4);
+      const color = MB.accentHSL(idx, f);
+      color.l = MB.clamp(color.l - 6 + (f.brightness - 0.5) * 10, 15, 80);
       return {
-        base: MB.deform(MB.polygon(x, y, r, 10), 3, 0.45),
+        base: MB.deform(MB.polygon(x, y, r, 8), 2, 0.3),
         color,
-        layers: 26,
+        layers: 10,
         done: 0,
       };
     }
@@ -115,14 +125,15 @@
         const target = Math.round(14 + f.energy * 100);
         let n = Math.min(4, target - this.agents.length);
         while (n-- > 0) this._spawn(f);
-        if (f.beat && f.beatStrength > 0.2 && this.blooms.length < 5) this.blooms.push(this._makeBloom(f));
+        if (f.beat && this.blooms.length < 12) this.blooms.push(this._makeBloom(f));
       }
 
-      // Watercolor blooms spread over a few frames, glazed with multiply.
-      ctx.globalCompositeOperation = 'multiply';
+      // Dabs settle over a few frames. Painted normally (not multiplied) so
+      // they stay clean instead of darkening into mud.
+      ctx.globalCompositeOperation = 'source-over';
       for (const b of this.blooms) {
         for (let k = 0; k < 2 && b.done < b.layers; k++, b.done++) {
-          MB.fillPoly(ctx, MB.deform(b.base, 2, 0.28), MB.hsla(b.color, 0.035));
+          MB.fillPoly(ctx, MB.deform(b.base, 2, 0.12), MB.hsla(b.color, 0.09));
         }
       }
       this.blooms = this.blooms.filter((b) => b.done < b.layers);

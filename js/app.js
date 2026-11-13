@@ -51,6 +51,7 @@
     painter.clear();
     timeline = [];
     recTimer = hudTimer = quietTimer = 0;
+    resetHud();
     state = 'listening';
     show($('#intro'), false);
     show($('#hud'), true);
@@ -136,15 +137,72 @@
     painter.clear();
   }
 
-  function updateHud(f) {
+  // The mood readout only changes on a real shift in the song: it follows a
+  // slow average, needs to cross a boundary by a clear margin, and the new
+  // mood has to hold for a few seconds before it's shown.
+  const WORDS = [
+    ['melancholy', 'brooding', 'stormy'],
+    ['wistful', 'bittersweet', 'restless'],
+    ['tender', 'warm', 'radiant'],
+  ];
+  let hud;
+  function resetHud() {
+    hud = { mode: null, energy: null, modeBand: null, energyBand: null, word: null, cand: null, candFor: 0,
+      key: null, keyCand: null, keyCandFor: 0, bpm: null };
+  }
+  resetHud();
+
+  function band(v, cur, lo, hi, margin) {
+    const raw = v < lo ? 0 : v > hi ? 2 : 1;
+    if (cur === null || raw === cur) return raw;
+    if (raw > cur) return v > (cur === 0 ? lo : hi) + margin ? raw : cur;
+    return v < (cur === 2 ? hi : lo) - margin ? raw : cur;
+  }
+
+  function updateHud(f, dt) {
     if (f.silent) {
-      $('#mood-word').textContent = 'listening…';
-      $('#mood-detail').textContent = 'waiting for sound';
+      if (!hud.word) {
+        $('#mood-word').textContent = 'listening…';
+        $('#mood-detail').textContent = 'waiting for sound';
+      }
       return;
     }
+    hud.warmup = (hud.warmup || 0) + dt;
+    if (hud.warmup < 3) {
+      $('#mood-word').textContent = 'listening…';
+      $('#mood-detail').textContent = 'getting a feel for it';
+      return;
+    }
+    if (hud.mode === null) { hud.mode = f.mode; hud.energy = f.energy; }
+    hud.mode += (f.mode - hud.mode) * (1 - Math.exp(-dt / 4));
+    hud.energy += (f.energy - hud.energy) * (1 - Math.exp(-dt / 4));
+    hud.modeBand = band(hud.mode, hud.modeBand, 0.4, 0.6, 0.08);
+    hud.energyBand = band(hud.energy, hud.energyBand, 0.3, 0.6, 0.08);
+    const word = WORDS[hud.modeBand][hud.energyBand];
+    if (!hud.word) hud.word = word;
+    else if (word !== hud.word) {
+      if (word !== hud.cand) { hud.cand = word; hud.candFor = 0; }
+      hud.candFor += dt;
+      if (hud.candFor >= 3) { hud.word = word; hud.cand = null; }
+    } else hud.cand = null;
+
     const keyName = `${MB.NOTE_NAMES[f.tonic]} ${f.keyMode >= 0.5 ? 'major' : 'minor'}`;
-    $('#mood-word').textContent = MB.moodWord(f.mode, f.energy);
-    $('#mood-detail').textContent = `leaning ${keyName} · about ${Math.round(f.bpm)} bpm`;
+    if (!hud.key || hud.heard < 4) hud.key = keyName;
+    else if (keyName !== hud.key) {
+      if (keyName !== hud.keyCand) { hud.keyCand = keyName; hud.keyCandFor = 0; }
+      hud.keyCandFor += dt;
+      if (hud.keyCandFor >= 5) { hud.key = keyName; hud.keyCand = null; }
+    } else hud.keyCand = null;
+    hud.heard = (hud.heard || 0) + dt;
+
+    if (hud.bpm === null || Math.abs(f.bpm - hud.bpm) > 8) hud.bpm = Math.round(f.bpm);
+
+    $('#mood-word').textContent = hud.word;
+    $('#mood-detail').textContent = `leaning ${hud.key} · about ${hud.bpm} bpm`;
+  }
+
+  function clearCanvas() {
+    painter.clear();
   }
 
   function frame(now) {
@@ -165,7 +223,7 @@
         }
       }
       hudTimer += dt;
-      if (hudTimer > 0.5) { hudTimer = 0; updateHud(f); }
+      if (hudTimer > 0.5) { updateHud(f, hudTimer); hudTimer = 0; }
       quietTimer += dt;
       if (quietTimer > 6) $('#hud').classList.add('quiet');
     }
@@ -187,6 +245,7 @@
     if (file) start('file', file);
   });
   $('#btn-finish').addEventListener('click', finish);
+  $('#btn-clear').addEventListener('click', clearCanvas);
   $('#btn-save').addEventListener('click', save);
   $('#btn-again').addEventListener('click', again);
   window.addEventListener('mousemove', () => {
