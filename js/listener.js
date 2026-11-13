@@ -95,6 +95,8 @@
         beat: false, beatStrength: 0, silent: true,
         // how full the arrangement is: 0 = one voice and a guitar, 1 = everything
         lush: 0,
+        // per-band envelopes, 0..1, and momentary events
+        bass: 0, mid: 0, high: 0, bassHit: 0, spark: 0,
         // the lead melody (often the voice): pitch 0 = low, 1 = high
         melody: { on: false, pitch: 0.5, loud: 0, conf: 0 },
       };
@@ -113,7 +115,8 @@
       const rms = Math.sqrt(sq / this.wave.length);
       // compare against the loudest *sustained* level, not single drum hits
       this.rmsS = (this.rmsS || 0) + (rms - (this.rmsS || 0)) * ease(dt, 0.4);
-      this.peak = Math.max(this.rmsS, this.peak * Math.exp(-dt / 25), 0.01);
+      // never below a realistic "full" level, so quiet intros read as quiet
+      this.peak = Math.max(this.rmsS, this.peak * Math.exp(-dt / 25), 0.1);
       f.rms = rms;
       f.silent = rms < 0.003;
       f.level = clamp(rms / this.peak);
@@ -121,6 +124,7 @@
 
       // Spectrum: brightness (centroid), onset flux, and pitch classes.
       let num = 0, den = 0, flux = 0, hiPow = 0, lowPow = 0, totPow = 0;
+      let bassP = 0, midP = 0, highP = 0;
       const cf = this.chromaFrame.fill(0);
       const bp = this.bandPow.fill(0);
       for (let i = 1; i < this.freq.length; i++) {
@@ -135,6 +139,9 @@
           totPow += m * m;
           if (hz > 5000) hiPow += m * m;
           if (hz < 150) lowPow += m * m;
+          if (hz < 250) bassP += m * m;
+          else if (hz < 4000) midP += m * m;
+          else highP += m * m;
         }
         if (hz < 12000) { num += hz * m; den += m; }
         const lm = Math.log1p(m * 1000);
@@ -170,6 +177,7 @@
       f.lush += ((f.silent ? 0 : lushRaw) - f.lush) * ease(dt, 1.5);
 
       this._melody(dt);
+      this._bands(dt, Math.sqrt(bassP), Math.sqrt(midP), Math.sqrt(highP));
 
       if (!f.silent) {
         this.heard += dt;
@@ -220,6 +228,42 @@
       this.tempoTimer += dt;
       if (this.tempoTimer > 1) { this.tempoTimer = 0; this._tempo(); }
       return f;
+    }
+
+    // Bass, mid and high, each measured against its own sustained peak, with
+    // quick, gentle attacks and slower releases. Also flags bass hits and
+    // bright high-frequency sparks.
+    _bands(dt, bass, mid, high) {
+      const f = this.f;
+      const B = (this.bands = this.bands || {
+        bass: { peak: 1e-3, avg: 0, env: 0 }, mid: { peak: 1e-3, avg: 0, env: 0 }, high: { peak: 1e-3, avg: 0, env: 0 },
+        hitCool: 0, sparkCool: 0,
+      });
+      const raw = { bass, mid, high };
+      const release = { bass: 1.1, mid: 0.8, high: 0.5 };
+      // typical levels of each band in full, loud music
+      const ref = { bass: 0.03, mid: 0.035, high: 0.004 };
+      for (const k of ['bass', 'mid', 'high']) {
+        const b = B[k];
+        b.avg += (raw[k] - b.avg) * ease(dt, 0.35);
+        b.peak = Math.max(b.avg, b.peak * Math.exp(-dt / 30), ref[k]);
+        const x = f.silent ? 0 : clamp(raw[k] / (b.peak * 1.15));
+        b.env += (x - b.env) * ease(dt, x > b.env ? 0.07 : release[k]);
+        f[k] = b.env;
+      }
+      // a bass hit: a sudden rise well above its recent level
+      B.hitCool -= dt;
+      f.bassHit = 0;
+      if (!f.silent && B.hitCool <= 0 && bass > B.bass.avg * 1.45 && bass > B.bass.peak * 0.35) {
+        f.bassHit = clamp(bass / B.bass.peak);
+        B.hitCool = 0.18;
+      }
+      B.sparkCool -= dt;
+      f.spark = 0;
+      if (!f.silent && B.sparkCool <= 0 && high > B.high.avg * 1.5 && high > B.high.peak * 0.2) {
+        f.spark = clamp(high / B.high.peak);
+        B.sparkCool = 0.05;
+      }
     }
 
     // Find the strongest harmonic series in the vocal range. It follows the

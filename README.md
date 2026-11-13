@@ -23,6 +23,22 @@ finished artwork.
    and the canvas is kept exactly as it is. Name it and click **save painting**
    for a PNG. **clear** starts the canvas over.
 
+## Two styles
+
+Switch on the start screen (*atmosphere · paint*); your choice is remembered.
+
+- **Atmosphere** (default): soft fields of coloured light suspended in a deep
+  charcoal fog, with fine film grain and a few crisp points. Forms swell,
+  stretch, fold and dissolve with the music, and traces of earlier moments
+  linger and slowly diffuse. Volume sets how full and luminous the forms are;
+  bass swells them and sends slow pressure ripples through one form at a time;
+  the midrange folds and moves them; high frequencies scatter fine points and
+  shimmer; tempo sets the cadence of gestures; a fuller arrangement brings more
+  layers. **finish** keeps a still of the moment you can save. Needs a browser
+  with WebGL2 (Chrome, Edge, Safari, Firefox); without it, paint is used.
+- **Paint**: flowing brushwork while you listen, with a permanent textured
+  painting revealed at the end.
+
 ## What it listens for
 
 | In the music | In the painting |
@@ -64,7 +80,8 @@ the tempo.
 ## Project layout
 
 - `index.html`, `css/style.css`: the page
-- `js/listener.js`: audio capture and analysis (loudness, brightness, key, chords, tempo)
+- `js/listener.js`: audio capture and analysis (loudness, bass/mid/high, brightness, key, chords, tempo, melody)
+- `js/atmosphere.js`: the atmosphere style (WebGL)
 - `js/flow.js`: the wet paint, the moving layer you watch while listening
 - `js/painter.js`: the permanent painting: brush, composition and accumulation
 - `js/brush.js`: shared noise, palettes and canvas grounds

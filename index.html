@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <canvas id="atmos"></canvas>
   <canvas id="live"></canvas>
   <div id="grain"></div>
 
@@ -23,6 +24,11 @@
       <label class="file-btn">audio file<input id="file" type="file" accept="audio/*" hidden></label>
     </nav>
     <p id="error" class="error" hidden></p>
+    <nav class="links views" aria-label="Style">
+      <button data-view="atmosphere">atmosphere</button>
+      <span class="dot">·</span>
+      <button data-view="paint">paint</button>
+    </nav>
     <details class="help">
       <summary>using spotify?</summary>
       <p>In Chrome or Edge, play your song at open.spotify.com in another tab. Click <em>listen to a tab</em>, choose that tab and turn on <em>Share tab audio</em>. Keep this window visible while it paints.</p>
@@ -56,6 +62,7 @@
   <script src="js/listener.js"></script>
   <script src="js/painter.js"></script>
   <script src="js/flow.js"></script>
+  <script src="js/atmosphere.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

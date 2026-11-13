@@ -10,6 +10,21 @@
 
   const painter = new MB.LivePainter($('#live'));
   const wet = new MB.FlowLayer(document.createElement('canvas'));
+
+  // Two styles: "atmosphere" (default) and "paint". ?view= or the start
+  // screen switch picks one; the choice is remembered on this device.
+  let atmos = null;
+  try { atmos = new MB.Atmosphere($('#atmos')); } catch (e) { console.warn('Atmosphere unavailable:', e); }
+  let view = new URLSearchParams(location.search).get('view');
+  try { view = view || localStorage.getItem('mb-view'); } catch (e) { /* storage blocked */ }
+  function setView(v) {
+    view = v === 'paint' || !atmos ? 'paint' : 'atmosphere';
+    document.documentElement.dataset.view = view;
+    document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+    try { localStorage.setItem('mb-view', view); } catch (e) { /* storage blocked */ }
+  }
+  setView(view || 'atmosphere');
+  let lastF = null;
   $('#grain').style.backgroundImage = `url(${MB.makeGrain(400).toDataURL()})`;
   $('#grain').style.opacity = MB.theme.grain;
 
@@ -28,6 +43,7 @@
     energy: 0.12, level: 0.12, lush: 0.12, mode: 0.55, brightness: 0.55, hueShift: 0, bpm: 70,
     melody: { on: false, pitch: 0.5, loud: 0 },
     beat: false, beatStrength: 0, silent: false,
+    bass: 0.1, mid: 0.2, high: 0.05, bassHit: 0, spark: 0,
   };
 
   function show(el, on) { el.hidden = !on; }
@@ -57,6 +73,7 @@
     l.onEnded = finish;
     painter.begin();
     wet.clear();
+    if (atmos) atmos.reset();
     timeline = [];
     recTimer = hudTimer = quietTimer = 0;
     resetHud();
@@ -97,8 +114,9 @@
     summary.caption = `${dur} · leaning ${summary.keyName} · about ${summary.bpm} bpm · ${MB.moodWord(0.5 * avgMode + 0.5 * summary.modeValue, avgEnergy)}`;
     $('#caption').textContent = summary.caption;
 
-    // Stop adding marks and keep the painting exactly as it stands.
-    const art = painter.stop();
+    // Paint: stop adding marks and keep the painting as it stands.
+    // Atmosphere: keep a still of the last moment.
+    const art = view === 'atmosphere' ? atmos.capture(lastF || idleMood) : painter.stop();
     finalCanvas.width = art.width;
     finalCanvas.height = art.height;
     fctx.drawImage(art, 0, 0);
@@ -107,7 +125,7 @@
     void finalCanvas.offsetWidth; // restart the reveal animation
     finalCanvas.classList.add('reveal');
     $('#btn-save').disabled = false;
-    $('#btn-save').textContent = 'save painting';
+    $('#btn-save').textContent = view === 'atmosphere' ? 'save still' : 'save painting';
     show($('#finale'), true);
   }
 
@@ -216,6 +234,7 @@
   function clearCanvas() {
     painter.clear();
     wet.clear();
+    if (atmos) atmos.reset();
   }
 
   function frame(now) {
@@ -223,16 +242,24 @@
     last = now;
 
     if (state === 'intro') {
-      wet.update(idleMood, dt);
-      painter.render(wet);
+      if (view === 'atmosphere') atmos.update(idleMood, dt);
+      else {
+        wet.update(idleMood, dt);
+        painter.render(wet);
+      }
     } else if (state === 'listening' && listener && listener.analyzer) {
       const an = listener.analyzer;
       const f = an.update(dt);
-      painter.update(f, dt);
-      wet.update(f, dt);
-      // while listening you see only the moving paint; the painting builds
-      // out of sight and is revealed when the song ends
-      painter.render(wet, 0);
+      lastF = f;
+      if (view === 'atmosphere') {
+        atmos.update(f, dt);
+      } else {
+        painter.update(f, dt);
+        wet.update(f, dt);
+        // while listening you see only the moving paint; the painting builds
+        // out of sight and is revealed when the song ends
+        painter.render(wet, 0);
+      }
       recTimer += dt;
       if (recTimer >= 0.25) {
         recTimer = 0;
@@ -263,13 +290,14 @@
   $('#btn-clear').addEventListener('click', clearCanvas);
   $('#btn-save').addEventListener('click', save);
   $('#btn-again').addEventListener('click', again);
+  document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
   window.addEventListener('mousemove', () => {
     quietTimer = 0;
     $('#hud').classList.remove('quiet');
   });
 
   // For testing from the console.
-  MB.debug = { painter, wet, get listener() { return listener; }, get timeline() { return timeline; }, finish };
+  MB.debug = { painter, wet, atmos, get view() { return view; }, get listener() { return listener; }, get timeline() { return timeline; }, finish };
 
   requestAnimationFrame(frame);
 })();
