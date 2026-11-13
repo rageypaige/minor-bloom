@@ -147,11 +147,11 @@
     c.fillStyle = MB.theme.dark ? 'rgba(244, 240, 234, 0.8)' : 'rgba(30, 24, 34, 0.72)';
     if (title) {
       c.font = `${Math.round(56 * k)}px "Cormorant Garamond", Georgia, serif`;
-      c.fillText(title, W - 70 * k, H - 108 * k);
+      c.fillText(title, W - 60 * k, H - 94 * k);
     }
-    c.font = `${Math.round(26 * k)}px Inter, system-ui, sans-serif`;
+    c.font = `${Math.round(23 * k)}px "Cormorant Garamond", Georgia, serif`;
     c.fillStyle = MB.theme.dark ? 'rgba(244, 240, 234, 0.55)' : 'rgba(30, 24, 34, 0.55)';
-    c.fillText(`${caption} · Minor Bloom`, W - 70 * k, H - 62 * k);
+    c.fillText(`${caption} · Minor Bloom`, W - 60 * k, H - 54 * k);
     out.toBlob((blob) => {
       const a = document.createElement('a');
       const slug = (title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
