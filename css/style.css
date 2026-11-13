@@ -24,13 +24,7 @@ body {
   font-size: 19px;
 }
 
-#live, #atmos { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
-html[data-view="atmosphere"] #live, html[data-view="atmosphere"] #grain { display: none; }
-html[data-view="paint"] #atmos { display: none; }
-.views { margin-top: 14px; font-size: 14px; }
-.views button { color: var(--ink-faint); }
-.views button[aria-pressed="true"] { color: var(--ink-soft); }
-#grain { position: fixed; inset: 0; pointer-events: none; mix-blend-mode: multiply; opacity: 0; }
+#atmos { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
 
 /* Text-only buttons */
 button, .file-btn {
@@ -100,5 +94,3 @@ h1 { font-weight: 400; font-size: 44px; margin: 0 0 14px; letter-spacing: 0.01em
 /* Phones can't share tab or system audio: hide that option there */
 html[data-tab="no"] .tab-only { display: none; }
 html:not([data-tab="no"]) .phone-only { display: none; }
-/* saving mid-song is an atmosphere thing */
-html[data-view="paint"] .atmos-only { display: none; }

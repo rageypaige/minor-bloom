@@ -1,10 +1,8 @@
-// Wires everything together: start screen → listening → the finished still or painting.
+// Wires everything together: start screen → listening → a still of the moment.
 (function () {
   const MB = window.MB;
   const $ = (s) => document.querySelector(s);
 
-  // Background: ?bg=paper|white|mist|night|charcoal
-  MB.setTheme(new URLSearchParams(location.search).get('bg') || 'night');
   document.documentElement.dataset.ground = MB.theme.dark ? 'dark' : 'light';
   document.documentElement.style.setProperty('--bg', MB.PAPER);
 
@@ -12,25 +10,9 @@
   const canTab = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
   document.documentElement.dataset.tab = canTab ? 'yes' : 'no';
 
-  const painter = new MB.LivePainter($('#live'));
-  const wet = new MB.FlowLayer(document.createElement('canvas'));
-
-  // Two styles: "atmosphere" (default) and "paint". ?view= or the start
-  // screen switch picks one; the choice is remembered on this device.
   let atmos = null;
   try { atmos = new MB.Atmosphere($('#atmos')); } catch (e) { console.warn('Atmosphere unavailable:', e); }
-  let view = new URLSearchParams(location.search).get('view');
-  try { view = view || localStorage.getItem('mb-view'); } catch (e) { /* storage blocked */ }
-  function setView(v) {
-    view = v === 'paint' || !atmos ? 'paint' : 'atmosphere';
-    document.documentElement.dataset.view = view;
-    document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
-    try { localStorage.setItem('mb-view', view); } catch (e) { /* storage blocked */ }
-  }
-  setView(view || 'atmosphere');
   let lastF = null;
-  $('#grain').style.backgroundImage = `url(${MB.makeGrain(400).toDataURL()})`;
-  $('#grain').style.opacity = MB.theme.grain;
 
   const finalCanvas = $('#final');
   const fctx = finalCanvas.getContext('2d');
@@ -42,7 +24,7 @@
   let summary = null;
   let last = performance.now();
 
-  // Gentle brushwork behind the start screen.
+  // A calm sky behind the start screen.
   const idleMood = {
     energy: 0.12, level: 0.12, lush: 0.12, mode: 0.55, brightness: 0.55, hueShift: 0, bpm: 70,
     melody: { on: false, pitch: 0.5, loud: 0 },
@@ -75,9 +57,7 @@
     }
     listener = l;
     l.onEnded = finish;
-    painter.begin();
-    wet.clear();
-    if (atmos) atmos.reset();
+    atmos.reset();
     timeline = [];
     recTimer = hudTimer = quietTimer = 0;
     resetHud();
@@ -99,10 +79,9 @@
     show($('#hud'), false);
 
     if (timeline.length < 12 || heard < 3) {
-      painter.clear();
       state = 'intro';
       show($('#intro'), true);
-      setError('That was too short or too quiet to paint. Let it listen for at least a few seconds of music.');
+      setError('That was too short or too quiet. Let it listen for at least a few seconds of music.');
       return;
     }
 
@@ -118,9 +97,8 @@
     summary.caption = `${dur} · leaning ${summary.keyName} · about ${summary.bpm} bpm · ${MB.moodWord(0.5 * avgMode + 0.5 * summary.modeValue, avgEnergy)}`;
     $('#caption').textContent = summary.caption;
 
-    // Paint: stop adding marks and keep the painting as it stands.
-    // Atmosphere: keep a still of the last moment.
-    const art = view === 'atmosphere' ? atmos.capture(lastF || idleMood) : painter.stop();
+    // keep a still of the last moment
+    const art = atmos.capture(lastF || idleMood);
     finalCanvas.width = art.width;
     finalCanvas.height = art.height;
     fctx.drawImage(art, 0, 0);
@@ -129,8 +107,7 @@
     void finalCanvas.offsetWidth; // restart the reveal animation
     finalCanvas.classList.add('reveal');
     $('#btn-save').disabled = false;
-    $('#btn-save').textContent = view === 'atmosphere' ? 'save still' : 'save painting';
-    $('#title').placeholder = view === 'atmosphere' ? 'name this moment' : 'name this painting';
+    $('#btn-save').textContent = 'save still';
     show($('#finale'), true);
   }
 
@@ -163,13 +140,13 @@
   }
 
   function save() {
-    downloadStill(finalCanvas, $('#title').value.trim(), summary.caption, view === 'atmosphere' ? 'moment' : 'painting');
+    downloadStill(finalCanvas, $('#title').value.trim(), summary.caption, 'moment');
   }
 
   // Save the sky as it is right now, without stopping the music.
   let snapTimer = null;
   function snap() {
-    if (state !== 'listening' || view !== 'atmosphere' || !atmos || !listener) return;
+    if (state !== 'listening' || !listener) return;
     const secs = Math.round(listener.analyzer.elapsed);
     const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
     const parts = [time];
@@ -188,8 +165,6 @@
     show($('#intro'), true);
     setError('');
     $('#title').value = '';
-    painter.clear();
-    wet.clear();
   }
 
   // The mood readout only changes on a real shift in the song: it follows a
@@ -256,35 +231,19 @@
     $('#mood-detail').textContent = `leaning ${hud.key} · about ${hud.bpm} bpm`;
   }
 
-  function clearCanvas() {
-    painter.clear();
-    wet.clear();
-    if (atmos) atmos.reset();
-  }
-
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
 
-    if (state === 'intro') {
-      if (view === 'atmosphere') atmos.update(idleMood, dt);
-      else {
-        wet.update(idleMood, dt);
-        painter.render(wet);
-      }
+    if (!atmos) {
+      // nothing to draw without WebGL2
+    } else if (state === 'intro') {
+      atmos.update(idleMood, dt);
     } else if (state === 'listening' && listener && listener.analyzer) {
       const an = listener.analyzer;
       const f = an.update(dt);
       lastF = f;
-      if (view === 'atmosphere') {
-        atmos.update(f, dt);
-      } else {
-        painter.update(f, dt);
-        wet.update(f, dt);
-        // while listening you see only the moving paint; the painting builds
-        // out of sight and is revealed when the song ends
-        painter.render(wet, 0);
-      }
+      atmos.update(f, dt);
       recTimer += dt;
       if (recTimer >= 0.25) {
         recTimer = 0;
@@ -312,18 +271,24 @@
     if (file) start('file', file);
   });
   $('#btn-finish').addEventListener('click', finish);
-  $('#btn-clear').addEventListener('click', clearCanvas);
   $('#btn-snap').addEventListener('click', snap);
   $('#btn-save').addEventListener('click', save);
   $('#btn-again').addEventListener('click', again);
-  document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
-  window.addEventListener('mousemove', () => {
+  // moving the mouse or touching the screen brings the quiet controls back
+  const wake = () => {
     quietTimer = 0;
     $('#hud').classList.remove('quiet');
-  });
+  };
+  window.addEventListener('mousemove', wake);
+  window.addEventListener('pointerdown', wake);
+
+  if (!atmos) {
+    document.querySelectorAll('#intro .links').forEach((n) => { n.hidden = true; });
+    setError('Minor Bloom needs WebGL2 to draw its sky. Try a recent version of Chrome, Edge, Safari or Firefox.');
+  }
 
   // For testing from the console.
-  MB.debug = { painter, wet, atmos, get view() { return view; }, get listener() { return listener; }, get timeline() { return timeline; }, finish };
+  MB.debug = { atmos, get listener() { return listener; }, get timeline() { return timeline; }, finish };
 
   requestAnimationFrame(frame);
 })();
