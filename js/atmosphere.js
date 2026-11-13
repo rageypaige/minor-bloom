@@ -55,7 +55,9 @@ void main(){
     if (dot(d, d) > 10.) continue;
     float s = B.z, tt = mod(t * .035, 512.) + s;
     // folds: the form's space is bent by slow noise (midrange)
-    vec2 w = vec2(fbm(d * 1.3 + vec2(tt, s)), fbm(d * 1.3 + vec2(s * 1.7, -tt))) - .47;
+    // the form morphs in place like a cloud; growth speeds the billowing
+    float ph = D.w * .22;
+    vec2 w = vec2(fbm(d * 1.3 + vec2(tt + ph, s)), fbm(d * 1.3 + vec2(s * 1.7, -tt - ph * .8))) - .47;
     // and its silhouette is pulled into an irregular shape of its own
     vec2 w2 = vec2(fbm(d * .65 + s * 3.), fbm(d * .65 - s * 2.)) - .47;
     vec2 q = d + w * B.y + w2 * 1.1;
@@ -64,15 +66,15 @@ void main(){
     r += D.y * sin(r * 6.5 - D.x) * exp(-r * 1.1);
     float dens = exp(-r * r * 1.7);
     // uneven feathering into the dark
-    float edge = fbm(q * 2.4 + s * 5. - tt * .6);
+    float edge = fbm(q * 2.4 + s * 5. + vec2(-tt * .6, ph * .5));
     dens *= smoothstep(.04, .8, dens * .85 + edge * .6 - .12);
     // internal texture, density variation and fine shimmer (highs)
-    float tex = fbm(q * 4.2 + vec2(-tt * 1.3, tt));
+    float tex = fbm(q * 4.2 + vec2(-tt * 1.3 - ph * .6, tt + ph * .4));
     dens *= .5 + tex + u_high * .3 * (noise(q * 24. + t * 2.3) - .5);
     dens = max(dens, 0.);
     vec3 c = C.rgb * B.w * dens;
     // a luminous concentration, kept for strong moments
-    c += mix(C.rgb, vec3(1.), .4) * C.a * pow(dens, 2.4) * 1.5;
+    c += mix(C.rgb, vec3(1.), .22) * C.a * pow(dens, 2.4) * 1.2;
     col += c * D.z;
   }
   o = vec4(col, 1.);
@@ -221,27 +223,32 @@ void main(){
     }
 
     // ---------- Forms ----------
-    _spawn(kind) {
+    // A new form starts as a small drop and blooms outward. Drops gather
+    // toward the centre, near the slowly wandering focus; the broad air can
+    // sit anywhere, past the edges.
+    _spawn(kind, up = 0) {
       const A = this.asp;
+      const air = kind === 'air';
       let best = null, bestScore = -1e9;
-      // look for a spot with some room, near the current area of focus,
-      // sometimes reaching past the edge of the screen
       for (let k = 0; k < 10; k++) {
-        const x = rnd(-0.62, 0.62) * A, y = rnd(-0.6, 0.6);
+        const far = !air && Math.random() < 0.2; // now and then, further out
+        const spread = air ? 0.55 : far ? 0.42 : 0.22;
+        const x = clamp(this.focus.x + MB.gauss() * spread * A, -0.6 * A, 0.6 * A);
+        const y = clamp(this.focus.y + MB.gauss() * spread, -0.55, 0.55);
         let room = 1;
         for (const f of this.forms) if (f.kind === 'body') room = Math.min(room, Math.hypot(f.x - x, f.y - y));
-        const toFocus = Math.hypot(this.focus.x - x, this.focus.y - y);
-        const score = (kind === 'air' ? 0 : room) - 0.45 * toFocus + rnd(0, 0.15);
+        const score = (air ? 0 : Math.min(room, 0.4) * 1.5) - 0.3 * Math.hypot(x, y) + rnd(0, 0.1);
         if (score > bestScore) { bestScore = score; best = { x, y }; }
       }
-      const air = kind === 'air';
-      const size = air ? rnd(0.55, 0.85) : rnd(0.12, 0.24);
       this.forms.push({
-        kind, x: best.x, y: best.y, vx: 0, vy: 0,
-        hx: best.x, hy: best.y,
-        size, aspect: rnd(0.65, 1.5), rot: rnd(0, Math.PI), spin: rnd(-0.02, 0.02),
+        kind, x: best.x, y: best.y,
+        size: air ? rnd(0.55, 0.85) : rnd(0.16, 0.28) * (1 + up * 0.5),
+        aspect: rnd(0.7, 1.4), rot: rnd(0, Math.PI),
         seed: rnd(0, 9), pal: Math.floor(rnd(0, 6)),
-        age: 0, span: air ? rnd(70, 140) : rnd(18, 50), presence: 0,
+        age: 0, span: air ? rnd(70, 140) : rnd(16, 40) * (1 - up * 0.4),
+        // how fast the drop opens out: quicker when the music is upbeat
+        growTau: air ? 12 : rnd(2.5, 5) * (1 - up * 0.5),
+        presence: 0, grow: 0, billow: 0,
         col: null, swell: 0, rip: 0, ripAmp: 0, glow: 0,
         bassy: Math.random() < 0.6, // not every form answers the bass
       });
@@ -265,36 +272,44 @@ void main(){
       this.eLong += (f.energy - this.eLong) * ease(dt, 20);
       const peak = clamp((f.energy - this.eLong - 0.08) * 3);
 
-      // the area of focus wanders slowly over the whole screen
+      // the area of focus wanders slowly, staying near the middle
       const fs = this.focus.seed;
-      this.focus.x = MB.noise3(t * 0.012, fs, 0) * 1.6 * this.asp * 0.5;
-      this.focus.y = MB.noise3(fs, t * 0.012, 3) * 0.8;
+      this.focus.x = MB.noise3(t * 0.01, fs, 0) * 0.45 * this.asp * 0.5;
+      this.focus.y = MB.noise3(fs, t * 0.01, 3) * 0.25;
 
-      // DENSITY: how many forms there are
-      const want = Math.round(1 + lush * 4.5 + vol * 1.5);
+      // how upbeat the music is right now: full, loud and quick
+      const tempoUp = clamp(((f.bpm || 90) - 80) / 70);
+      const upRaw = clamp(0.45 * lush + 0.35 * (f.energy || 0) + 0.2 * tempoUp);
+      this.up = (this.up ?? 0) + (upRaw - (this.up ?? 0)) * ease(dt, upRaw > (this.up ?? 0) ? 1.5 : 5);
+      const up = this.up;
+
+      // DENSITY: how many forms there are; upbeat music blooms more often
+      const want = Math.min(6, Math.round(1 + lush * 2.5 + vol * 0.8 + up * 2.2));
       const bodies = this.forms.filter((x) => x.kind === 'body' && x.age < x.span);
       this.spawnCool -= dt;
       if (bodies.length < want && this.spawnCool <= 0 && !f.silent) {
-        this._spawn('body');
-        this.spawnCool = rnd(1.5, 4);
+        this._spawn('body', up);
+        this.spawnCool = rnd(1.2, 3.5) * (1 - up * 0.6);
       }
       if (bodies.length > want + 1) {
         const oldest = bodies.reduce((a, b) => (a.age / a.span > b.age / b.span ? a : b));
-        oldest.span = Math.min(oldest.span, oldest.age + 6);
+        oldest.span = Math.min(oldest.span, oldest.age + 7);
       }
       const airs = this.forms.filter((x) => x.kind === 'air' && x.age < x.span);
       if (airs.length < 2 + (lush > 0.55 ? 1 : 0)) this._spawn('air');
 
-      // TEMPO: gestures fall on a slow beat clock, one form at a time
+      // TEMPO: on a slow beat clock, one form at a time billows open a little
       const beat = 60 / clamp(f.bpm || 90, 50, 190);
       this.clock -= dt;
       if (this.clock <= 0 && this.forms.length) {
-        this.clock = beat * (lush < 0.3 ? 4 : lush < 0.6 ? 2 : 1) * rnd(0.9, 1.1);
+        this.clock = beat * (up < 0.3 ? 4 : up < 0.6 ? 2 : 1) * rnd(0.9, 1.1);
         const g = this.forms[Math.floor(Math.random() * this.forms.length)];
-        const a = rnd(0, Math.PI * 2), k = 0.012 * (0.4 + vol) * (g.kind === 'air' ? 0.4 : 1);
-        g.vx += Math.cos(a) * k;
-        g.vy += Math.sin(a) * k;
-        g.spin += rnd(-0.03, 0.03);
+        g.billowKick = (g.billowKick || 0) + 0.25 + 0.5 * vol;
+      }
+      // when it's upbeat, a strong bass hit drops new ink near the middle
+      if (f.bassHit > 0.6 && up > 0.5 && bodies.length < want + 2 && this.forms.length < MAXF && this.spawnCool < 1) {
+        this._spawn('body', up);
+        this.spawnCool = 1.2;
       }
 
       // BASS: a hit sends a pressure ripple through one form, not all
@@ -303,7 +318,7 @@ void main(){
         if (cands.length) {
           const g = cands[this.rippleNext++ % cands.length];
           g.rip = 0;
-          g.ripAmp = 0.05 + 0.12 * f.bassHit;
+          g.ripAmp = 0.03 + 0.07 * f.bassHit;
           g.swell = Math.min(1, g.swell + 0.35 * f.bassHit);
         }
       }
@@ -315,22 +330,21 @@ void main(){
         const fadeOut = clamp((g.span - g.age) / (g.kind === 'air' ? 14 : 7));
         g.presence = Math.min(fadeIn, fadeOut);
 
-        // slow underlying drift with inertia; the midrange makes it flow
-        const flow = 0.25 + mid * 0.9;
-        g.hx += MB.noise3(g.seed, t * 0.02, 1) * 0.004 * flow;
-        g.hy += MB.noise3(g.seed, t * 0.02, 5) * 0.004 * flow;
-        g.hx = clamp(g.hx, -0.7 * this.asp, 0.7 * this.asp);
-        g.hy = clamp(g.hy, -0.7, 0.7);
-        const wx = g.hx + MB.noise3(g.seed, t * 0.05 * flow, 2) * 0.25;
-        const wy = g.hy + MB.noise3(g.seed, t * 0.05 * flow, 7) * 0.2;
-        g.vx += (wx - g.x) * 0.25 * dt;
-        g.vy += (wy - g.y) * 0.25 * dt;
-        g.vx *= Math.exp(-dt / 2.5);
-        g.vy *= Math.exp(-dt / 2.5);
-        g.x += g.vx * dt * 10;
-        g.y += g.vy * dt * 10;
-        g.rot += g.spin * dt * (0.5 + mid);
-        g.spin *= Math.exp(-dt / 8);
+        // Growth: the drop opens out quickly at first, then keeps spreading
+        // slowly as it thins, like ink in water.
+        g.grow = (1 - Math.exp(-g.age / g.growTau)) * (1 + g.age * 0.006);
+        // Billowing: the form's inner structure flows outward as it grows;
+        // the midrange keeps it moving, beats give it a gentle push.
+        g.billowKick = (g.billowKick || 0) * Math.exp(-dt / 1.2);
+        g.billow += dt * (0.12 + 0.35 * mid + 1.6 * Math.exp(-g.age / g.growTau) + g.billowKick);
+        // Drift: everything rides one slow, shared current, like clouds
+        // in a light wind, with a gentle pull back toward the middle.
+        const cx = MB.noise3(g.x * 0.6, g.y * 0.6, t * 0.015) * 0.022;
+        const cy = MB.noise3(g.x * 0.6 + 7.1, g.y * 0.6, t * 0.015) * 0.016;
+        const pull = g.kind === 'air' ? 0 : 0.02;
+        g.x += (cx * (0.5 + mid) - (g.x - this.focus.x) * pull) * dt;
+        g.y += (cy * (0.5 + mid) - (g.y - this.focus.y) * pull) * dt;
+        g.rot += MB.noise3(g.seed, t * 0.02, 9) * 0.02 * dt;
 
         // BASS: deep, rounded swelling with a slow release
         const bassTarget = g.bassy ? bass * 0.5 : bass * 0.12;
@@ -340,7 +354,7 @@ void main(){
 
         // PEAKS: the brightest light is kept for strong moments, near focus
         const near = Math.exp(-Math.hypot(g.x - this.focus.x, g.y - this.focus.y) * 2);
-        const glowT = g.kind === 'body' ? peak * near : 0;
+        const glowT = g.kind === 'body' ? Math.max(peak, (this.up || 0) * 0.35) * near : 0;
         g.glow += (glowT - g.glow) * ease(dt, glowT > g.glow ? 0.25 : 2.5);
 
         // colour: the palette, muted, mingling with nearby forms
@@ -397,18 +411,25 @@ void main(){
       const C = new Float32Array(MAXF * 4), D = new Float32Array(MAXF * 4);
       // draw broad air first, then bodies
       const list = this.forms.slice().sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'air' ? -1 : 1)).slice(0, MAXF);
+      // the more forms there are, the less each adds, so overlaps stay luminous
+      // rather than burning to white
+      const nb = list.filter((g) => g.kind === 'body').reduce((a, g) => a + g.presence, 0);
+      const share = 1 / Math.sqrt(Math.max(1, nb * 0.7));
       list.forEach((g, i) => {
         const air = g.kind === 'air';
         // VOLUME: fullness, scale and luminosity
-        const scale = g.size * (0.72 + 0.5 * vol) * (1 + 0.32 * g.swell);
+        const scale = g.size * (0.15 + 0.85 * Math.min(g.grow, 1.4)) * (0.75 + 0.5 * vol) * (1 + 0.3 * g.swell);
         const stretch = g.aspect * (1 + mid * 0.45 * Math.sin(g.seed + this.t * 0.07));
         A.set([g.x, g.y, scale * stretch, scale / Math.sqrt(stretch)], i * 4);
         const warp = (air ? 0.5 : 0.3) + mid * 0.7 + lush * 0.25;
-        const lum = air ? 0.025 + 0.045 * vol + 0.035 * lush : 0.08 + 0.5 * vol;
+        const up = this.up || 0;
+        // a fresh drop is densest; it thins as it spreads
+        const fresh = 0.75 + 0.5 * Math.exp(-g.age / (g.growTau * 3));
+        const lum = air ? 0.025 + 0.045 * vol + 0.035 * lush : (0.08 + 0.42 * vol + 0.22 * up) * fresh * share;
         B.set([g.rot, warp, g.seed, lum * g.presence], i * 4);
         const c = g.col || [0.5, 0.5, 0.5];
         C.set([c[0], c[1], c[2], g.glow * g.presence], i * 4);
-        D.set([g.rip, g.ripAmp, 1, 0], i * 4);
+        D.set([g.rip, g.ripAmp, 1, g.billow], i * 4);
       });
 
       gl.bindVertexArray(null);
@@ -460,7 +481,7 @@ void main(){
       gl.uniform1i(P.u.u_trace, 1);
       gl.uniform2f(P.u.u_res, this.c.width, this.c.height);
       gl.uniform1f(P.u.u_time, this.t);
-      gl.uniform1f(P.u.u_exposure, 1.35);
+      gl.uniform1f(P.u.u_exposure, 1.3 + 0.2 * (this.up || 0));
       gl.uniform1f(P.u.u_traceMix, 0.5);
       const base = [0.055, 0.055, 0.062].map((v, i) => v + this.tint[i] * 0.03);
       gl.uniform3fv(P.u.u_base, base);
