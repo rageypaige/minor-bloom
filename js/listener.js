@@ -202,6 +202,7 @@
         f.keyMode = key.modeValue;
         f.tonic = key.tonic;
         f.chordMode = this._chordMode(this.chromaShort);
+        this._chord(this.chromaShort);
       }
       const target = 0.65 * f.keyMode + 0.35 * f.chordMode;
       f.mode += (target - f.mode) * ease(dt, this.heard < 4 ? 0.8 : 3);
@@ -301,6 +302,30 @@
         mel.pitch += (p - mel.pitch) * ease(dt, mel.on ? 0.07 : 0.01);
       }
       mel.loud += ((voiced ? f.level : 0) - mel.loud) * ease(dt, 0.1);
+    }
+
+    // The chord being played right now: its root and whether it's major or
+    // minor. A new chord counts once it has held for about half a second,
+    // and bumps f.chordId so others can respond to the change.
+    _chord(c) {
+      const f = this.f;
+      let best = 0, root = 0, qual = 0.5;
+      for (let r = 0; r < 12; r++) {
+        const fifth = 0.8 * c[(r + 7) % 12];
+        const maj = c[r] + c[(r + 4) % 12] + fifth;
+        const min = c[r] + c[(r + 3) % 12] + fifth;
+        if (maj > best) { best = maj; root = r; qual = 1; }
+        if (min > best) { best = min; root = r; qual = 0; }
+      }
+      const name = root * 2 + qual;
+      if (name === this.chordCand) this.chordHold = (this.chordHold || 0) + 1;
+      else { this.chordCand = name; this.chordHold = 1; }
+      if (this.chordHold >= 2 && name !== this.chordName) {
+        this.chordName = name;
+        f.chordRoot = root;
+        f.chordQual = qual;
+        f.chordId = (f.chordId || 0) + 1;
+      }
     }
 
     _chordMode(c) {

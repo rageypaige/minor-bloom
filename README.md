@@ -37,6 +37,11 @@ Switch on the start screen (*atmosphere · paint*); your choice is remembered.
   their insides; high frequencies bring fleeting points and small lights;
   tempo sets the cadence of gestures; fuller, more upbeat music blooms more.
   At peaks a single broad form can take over, then dissolve into smaller ones.
+  The scene follows the song's shape: as it builds, the edges darken and the
+  light gathers and tightens; when the chorus or drop arrives it breaks open
+  in a luminous bloom with fuller colour, then settles. Each chord change sends
+  a wave of its colour through the fog (warmer for major chords, colder and
+  darker for minor), and the whole scene slowly breathes over each phrase.
   Quiet passages soften and open up. **finish** keeps a still you can save.
   Needs WebGL2 (current Chrome, Edge, Safari, Firefox); otherwise paint is used.
 - **Paint**: flowing brushwork while you listen, with a permanent textured

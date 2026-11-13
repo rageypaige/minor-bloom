@@ -14,7 +14,11 @@
 //   tempo   -> the cadence of gestures
 //   density -> how many layers there are and how complex the space is
 //   peaks   -> occasionally one broad form dominates, then dissolves
-//   harmony -> colour, through the existing major/minor palettes
+//   harmony -> colour, through the existing major/minor palettes; each
+//              chord change washes its own colour outward through the forms
+//   builds  -> the scene draws in (darker edges, gathered, tighter light);
+//              an arrival breaks it open in a large luminous bloom
+//   phrases -> the whole scene slowly breathes over each phrase (16 beats)
 //
 // Depth comes from three layers with different speeds and lifespans:
 //   distant  - broad, barely visible colour fields, very slow
@@ -116,7 +120,7 @@ void main(){
   const OUT = `#version 300 es
 precision highp float;
 uniform sampler2D u_scene, u_trace; uniform vec2 u_res;
-uniform float u_time, u_exposure, u_traceMix; uniform vec3 u_base;
+uniform float u_time, u_exposure, u_traceMix, u_vig; uniform vec3 u_base;
 uniform vec4 u_pts[${MAXP}]; uniform int u_np;
 uniform vec4 u_emb[${MAXE}]; uniform vec3 u_embC[${MAXE}]; uniform int u_ne;
 out vec4 o;
@@ -138,6 +142,9 @@ void main(){
     L += u_embC[i] * Em.w * de;
   }
   vec3 col = u_base + (1. - exp(-L * u_exposure));
+  // during a build the edges draw in toward darkness
+  float vd = length((uv - .5) * vec2(1.25, 1.)) * 1.5;
+  col = mix(col, u_base * .7, u_vig * smoothstep(.3, 1.1, vd));
   // a few crisp points
   for (int i = 0; i < ${MAXP}; i++) {
     if (i >= u_np) break;
@@ -322,6 +329,33 @@ void main(){
       return g;
     }
 
+    // The colour of a chord: warm and lighter for major, colder and darker
+    // for minor, turned around the colour wheel by its root.
+    _chordColour(f, pal, satMul) {
+      const fifths = ((f.chordRoot || 0) * 7) % 12;
+      const mood = { ...f, mode: f.chordQual ? 0.9 : 0.1, hueShift: Math.sin((fifths / 12) * Math.PI * 2) * 22 };
+      const c = MB.moodHSL(pal, mood);
+      const l = clamp(c.l * 0.75 + 16 + (f.chordQual ? 6 : -8), 26, 70);
+      return hslToRgb(c.h, c.s * 0.8 * satMul, l);
+    }
+
+    // An arrival after a build: the scene breaks open.
+    _release(f) {
+      this.release = 1;
+      this.tension = 0;
+      this.relCool = 16;
+      const fp = { x: this.focus.x, y: this.focus.y };
+      if (this.forms.length >= MAXF) {
+        const old = this.forms.filter((g) => !g.dom && KINDS[g.kind].layer === 1).sort((a, b) => b.age - a.age)[0];
+        if (old) old.span = old.age; // make room
+        this.forms = this.forms.filter((g) => g.age < g.span);
+      }
+      this._spawn('bloom', { at: fp, size: rnd(0.45, 0.6), span: rnd(16, 24), grow: 1.6, dom: true, lumMul: 1.15 });
+      for (const g of this.forms) g.billowKick += 1.2;
+      this.phase = Math.PI; // breathe out from here
+      this.domCool = Math.max(this.domCool, 25);
+    }
+
     // A dominant form: one broad, bright gesture for a musical peak. When it
     // begins to fade it breaks up into smaller overlapping forms.
     _dominant(f) {
@@ -347,9 +381,10 @@ void main(){
       }
     }
 
-    _colour(form, f) {
+    _colour(form, f, satMul = 1) {
       const K = KINDS[form.kind];
       const c = MB.moodHSL(form.pal, f);
+      c.s *= satMul;
       // restrained: muted, with lightness kept in a soft middle range; the
       // distant layer is greyer and dimmer, like colour seen through haze
       const l = clamp(c.l * 0.75 + 16, 30, 66) - (K.layer === 0 ? 6 : 0);
@@ -370,6 +405,46 @@ void main(){
       this.quiet = (this.quiet ?? 0.5) + (clamp(1 - vol * 1.5) - (this.quiet ?? 0.5)) * ease(dt, 2.5);
       // tempo, smoothed again here so the pace of gestures never lurches
       this.bpm = (this.bpm ?? f.bpm ?? 90) + ((f.bpm || 90) - (this.bpm ?? 90)) * ease(dt, 6);
+
+      // BUILD AND RELEASE. Tension follows how steadily loudness and
+      // fullness have been climbing over the last few seconds. It releases on
+      // a sudden arrival, or when a build tops out at a loud, full level.
+      const e = f.energy || 0;
+      this.heardT = (this.heardT || 0) + (f.silent ? 0 : dt);
+      this.eFast = (this.eFast ?? e) + (e - (this.eFast ?? e)) * ease(dt, 0.3);
+      this.eMid = (this.eMid ?? e) + (e - (this.eMid ?? e)) * ease(dt, 2);
+      this.lMid = (this.lMid ?? lush) + (lush - (this.lMid ?? lush)) * ease(dt, 2);
+      this.hist = this.hist || [];
+      this.histT = (this.histT || 0) + dt;
+      if (this.histT >= 0.5) { this.histT = 0; this.hist.push([this.eMid, this.lMid]); if (this.hist.length > 9) this.hist.shift(); }
+      const h0 = this.hist[0] || [this.eMid, this.lMid];
+      const span = Math.max(1, (this.hist.length - 1) * 0.5);
+      const slope = (this.eMid - h0[0]) / span + 0.7 * (this.lMid - h0[1]) / span; // per second
+      const rising = this.heardT < 8 ? 0 : clamp(slope * 9);
+      this.rising = rising;
+      this.relCool = (this.relCool ?? 8) - dt;
+      const t0 = this.tension ?? 0;
+      this.tension = this.relCool > 6 ? 0 : t0 + (rising - t0) * ease(dt, rising > t0 ? 2 : 3.5);
+      this.tensionPeak = Math.max(this.tension, (this.tensionPeak ?? 0) * Math.exp(-dt / 3));
+      const arrival = this.eFast - this.eMid > 0.25 && this.eFast > 0.55 && this.heardT > 8;
+      const toppedOut = this.tensionPeak > 0.4 && rising < this.tensionPeak * 0.6 && e > 0.45;
+      if (this.relCool <= 0 && !f.silent && (arrival || toppedOut)) { this._release(f); this.tensionPeak = 0; }
+      this.release = (this.release ?? 0) * Math.exp(-dt / 6);
+      const tension = this.tension, release = this.release;
+      // how vivid colour is: deeper at emotional high points, toward grey in quiet
+      this.satMul = clamp(0.9 + 0.5 * release + 0.25 * peak - 0.25 * this.quiet - 0.15 * tension, 0.45, 1.5);
+
+      // BREATHING: one slow inhale and exhale per phrase (16 beats)
+      this.phase = (this.phase ?? 0) + (dt * Math.PI * 2) / (16 * (60 / clamp(this.bpm, 50, 190)));
+      this.breath = 0.5 - 0.5 * Math.cos(this.phase);
+
+      // CHORDS: each change sends a wave of its colour out through the forms
+      if (f.chordId && f.chordId !== this.chordId) {
+        this.chordId = f.chordId;
+        const fp = this._focusPoint();
+        this.wave = { id: f.chordId, x: fp.x, y: fp.y, t: 0, f: { ...f } };
+      }
+      if (this.wave) this.wave.t += dt;
 
       // the main area of focus (for glow and the gentle pull to the middle)
       const fs = this.focus.seed;
@@ -440,12 +515,12 @@ void main(){
         // MID: internal movement; each layer has its own pace
         const pace = K.layer === 0 ? 0.35 : 1;
         g.billowKick *= Math.exp(-dt / 1.2);
-        g.billow += dt * pace * (0.1 + 0.4 * mid + 1.4 * Math.exp(-g.age / g.growTau) + g.billowKick);
+        g.billow += dt * pace * (0.1 + 0.4 * mid + 0.4 * tension + 1.4 * Math.exp(-g.age / g.growTau) + g.billowKick);
 
         // drift on one shared current; distant fields barely move
         const cx = MB.noise3(g.x * 0.6, g.y * 0.6, t * 0.015) * 0.022;
         const cy = MB.noise3(g.x * 0.6 + 7.1, g.y * 0.6, t * 0.015) * 0.016;
-        const pull = K.layer === 0 ? 0 : 0.018;
+        const pull = K.layer === 0 ? 0 : 0.018 * (1 + 3 * tension);
         const sp = K.drift * (0.5 + mid * 0.8);
         g.x += (cx * sp - (g.x - this.focus.x) * pull) * dt;
         g.y += (cy * sp - (g.y - this.focus.y) * pull) * dt;
@@ -470,7 +545,16 @@ void main(){
         g.dim = (g.dim ?? 1) + (back - (g.dim ?? 1)) * ease(dt, 2);
 
         // colour: the palette, muted, mingling with nearby forms
-        let target = this._colour(g, f);
+        let target = this._colour(g, f, this.satMul);
+        // the chord wave reaches this form: take on the chord's colour
+        const wv = this.wave;
+        if (wv && g.waveId !== wv.id && Math.hypot(g.x - wv.x, g.y - wv.y) - g.size * 0.6 < wv.t * 0.35) {
+          g.waveId = wv.id;
+          g.chordCol = this._chordColour(wv.f, g.pal, this.satMul);
+          g.chordAmt = 1;
+        }
+        g.chordAmt = (g.chordAmt || 0) * Math.exp(-dt / 8);
+        if (g.chordCol) target = target.map((v, i) => v + (g.chordCol[i] - v) * 0.7 * g.chordAmt);
         let wsum = 0;
         const mixc = [0, 0, 0];
         for (const o of this.forms) {
@@ -481,7 +565,7 @@ void main(){
         }
         if (wsum > 0) target = target.map((v, i) => v * 0.75 + (mixc[i] / wsum) * 0.25);
         if (!g.col) g.col = target;
-        else g.col = g.col.map((v, i) => v + (target[i] - v) * ease(dt, 5));
+        else g.col = g.col.map((v, i) => v + (target[i] - v) * ease(dt, g.chordAmt > 0.6 ? 1.2 : 5));
       }
       this.forms = this.forms.filter((g) => g.age < g.span);
 
@@ -546,11 +630,18 @@ void main(){
       const nb = list.filter((g) => KINDS[g.kind].layer === 1).reduce((a, g) => a + g.presence, 0);
       const share = 1 / Math.sqrt(Math.max(1, nb * 0.7));
       const up = this.up || 0, quiet = this.quiet ?? 0.5;
+      const tension = this.tension || 0, release = this.release || 0;
+      // breathing, a little deeper when the music is fuller
+      const depth = 0.35 + 0.65 * clamp(vol * 1.3);
+      const br = ((this.breath ?? 0.5) - 0.5) * 2 * depth;          // -1 .. 1
+      const brFar = (0.5 - 0.5 * Math.cos((this.phase || 0) - 0.9) - 0.5) * 2 * depth; // fields lag behind
       list.forEach((g, i) => {
         const K = KINDS[g.kind];
         const far = K.layer === 0;
         // VOLUME: fullness, scale and luminosity; BASS: expansion
-        const scale = g.size * (0.15 + 0.85 * Math.min(g.grow, 1.4)) * (0.78 + 0.45 * vol) * (1 + 0.28 * g.swell);
+        const b = far ? brFar : br;
+        const scale = g.size * (0.15 + 0.85 * Math.min(g.grow, 1.4)) * (0.78 + 0.45 * vol) * (1 + 0.28 * g.swell)
+          * (1 - 0.18 * tension + 0.15 * release) * (1 + 0.06 * b);
         const stretch = g.aspect * (1 + mid * 0.3 * Math.sin(g.seed + this.t * 0.07));
         // BASS: larger forms are gently pushed away from the centre of focus
         const dx = g.x - this.focus.x, dy = g.y - this.focus.y, dl = Math.hypot(dx, dy) + 0.05;
@@ -563,12 +654,12 @@ void main(){
         const lum = far
           ? 0.025 + 0.04 * vol + 0.03 * lush
           : K.lum * g.lumMul * (0.07 + 0.42 * vol + 0.2 * up) * fresh * share * (g.dim ?? 1);
-        B.set([g.rot, warp, g.seed, lum * g.presence], i * 4);
+        B.set([g.rot, warp, g.seed, lum * g.presence * (1 + 0.14 * b) * (1 + 0.18 * release)], i * 4);
         const c = g.col || [0.5, 0.5, 0.5];
         C.set([c[0], c[1], c[2], g.glow * g.presence], i * 4);
         D.set([g.rip, g.ripAmp, 1, g.billow], i * 4);
         // quiet passages soften: lower falloff and gentler texture
-        E.set([g.sil, g.fall * (1 - 0.3 * quiet), g.tex * (1 - 0.35 * quiet), g.edge], i * 4);
+        E.set([g.sil, g.fall * (1 - 0.3 * quiet) * (1 + 0.4 * tension), g.tex * (1 - 0.35 * quiet), g.edge], i * 4);
       });
 
       gl.bindVertexArray(null);
@@ -585,7 +676,7 @@ void main(){
       gl.uniform1f(P.u.u_time, this.t);
       gl.uniform1f(P.u.u_high, high);
       // quiet passages keep the air thin and spacious
-      gl.uniform1f(P.u.u_haze, 0.07 + 0.2 * lush + 0.08 * vol);
+      gl.uniform1f(P.u.u_haze, (0.07 + 0.2 * lush + 0.08 * vol) * (1 + 0.08 * br) * (1 - 0.3 * (this.tension || 0)) + 0.05 * (this.release || 0));
       gl.uniform3fv(P.u.u_tint, this.tint.map((v) => v * 0.22));
       gl.uniform1i(P.u.u_n, list.length);
       gl.uniform4fv(P.u.fA, A);
@@ -621,7 +712,8 @@ void main(){
       gl.uniform1i(P.u.u_trace, 1);
       gl.uniform2f(P.u.u_res, this.c.width, this.c.height);
       gl.uniform1f(P.u.u_time, this.t);
-      gl.uniform1f(P.u.u_exposure, 1.3 + 0.2 * (this.up || 0));
+      gl.uniform1f(P.u.u_exposure, 1.3 + 0.15 * (this.up || 0) + 0.15 * (this.release || 0));
+      gl.uniform1f(P.u.u_vig, clamp(0.12 + 0.6 * (this.tension || 0) - 0.12 * (this.release || 0), 0, 0.8));
       gl.uniform1f(P.u.u_traceMix, 0.5);
       const base = [0.055, 0.055, 0.062].map((v, i) => v + this.tint[i] * 0.03);
       gl.uniform3fv(P.u.u_base, base);
