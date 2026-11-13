@@ -3,8 +3,14 @@
   const MB = window.MB;
   const $ = (s) => document.querySelector(s);
 
+  // Background: ?bg=paper|white|mist|night|charcoal
+  MB.setTheme(new URLSearchParams(location.search).get('bg') || 'paper');
+  document.documentElement.dataset.ground = MB.theme.dark ? 'dark' : 'light';
+  document.documentElement.style.setProperty('--bg', MB.PAPER);
+
   const painter = new MB.LivePainter($('#live'));
   $('#grain').style.backgroundImage = `url(${MB.makeGrain(400).toDataURL()})`;
+  $('#grain').style.opacity = MB.theme.grain;
 
   const finalCanvas = $('#final');
   const fctx = finalCanvas.getContext('2d');
@@ -89,7 +95,7 @@
     summary.caption = `${dur} · leaning ${summary.keyName} · about ${summary.bpm} bpm · ${MB.moodWord(0.5 * avgMode + 0.5 * summary.modeValue, avgEnergy)}`;
     $('#caption').textContent = summary.caption;
     $('#btn-save').disabled = true;
-    $('#btn-save').textContent = 'Painting…';
+    $('#btn-save').textContent = 'painting…';
     show($('#finale'), true);
     const seed = Math.floor(timeline.reduce((a, s, i) => a + s.e * 1000 * (i + 1), 0)) || 7;
     finaleGen = MB.paintFinale(fctx, finalCanvas.width, finalCanvas.height, timeline, { seed, hueShift, bpm });
@@ -97,7 +103,7 @@
 
   function finaleDone() {
     $('#btn-save').disabled = false;
-    $('#btn-save').textContent = 'Save painting';
+    $('#btn-save').textContent = 'save painting';
   }
 
   function save() {

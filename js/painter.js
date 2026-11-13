@@ -117,7 +117,7 @@
       if (this.fadeTimer > 0.5) {
         this.fadeTimer = 0;
         ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = 'rgba(242,235,223,0.03)';
+        ctx.fillStyle = MB.rgb(MB.groundFor(f), MB.theme.tinted ? 0.045 : 0.03);
         ctx.fillRect(0, 0, this.w, this.h);
       }
 

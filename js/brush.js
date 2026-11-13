@@ -2,6 +2,24 @@
 (function () {
   const MB = (window.MB = window.MB || {});
 
+  // Canvas grounds. `lift` brightens the paint so it reads on dark grounds;
+  // `tinted` grounds slowly wash toward the song's mood.
+  MB.THEMES = {
+    paper: { bg: [242, 235, 223], grain: 0.55, lift: 0, dark: false },
+    white: { bg: [250, 250, 248], grain: 0, lift: 0, dark: false },
+    mist: { bg: [236, 237, 239], grain: 0.25, lift: 0, dark: false, tinted: true },
+    night: { bg: [15, 16, 26], grain: 0, lift: 26, dark: true },
+    charcoal: { bg: [36, 34, 33], grain: 0, lift: 20, dark: true },
+  };
+  MB.theme = MB.THEMES.paper;
+  MB.themeKey = 'paper';
+  MB.setTheme = function (key) {
+    if (!MB.THEMES[key]) key = 'paper';
+    MB.themeKey = key;
+    MB.theme = MB.THEMES[key];
+    MB.PAPER = MB.rgb(MB.theme.bg);
+  };
+  MB.rgb = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
   MB.PAPER = '#f2ebdf';
   MB.clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
   MB.lerp = (a, b, t) => a + (b - a) * t;
@@ -121,14 +139,25 @@
   function blend(majorSet, minorSet, i, mood) {
     const a = majorSet[i % majorSet.length], b = minorSet[i % minorSet.length];
     const t = 1 - MB.clamp(mood.mode); // mode: 1 = major, 0 = minor
+    const lift = MB.theme.lift || 0;
+    const l = lerp(a[2], b[2], t) + (mood.brightness - 0.5) * 18;
     return {
       h: (mixHue(a[0], b[0], t) + (mood.hueShift || 0) + 360) % 360,
       s: MB.clamp(lerp(a[1], b[1], t) + (mood.energy - 0.5) * 22, 8, 100),
-      l: MB.clamp(lerp(a[2], b[2], t) + (mood.brightness - 0.5) * 18, 10, 92),
+      // on dark grounds, lift dark colours most and light ones least
+      l: MB.clamp(l + lift * (1 - l / 100) * 1.4, 10, 92),
     };
   }
   MB.moodHSL = (i, mood) => blend(MAJOR, MINOR, i, mood);
   MB.accentHSL = (i, mood) => blend(ACCENT_MAJOR, ACCENT_MINOR, i, mood);
+  // Ground colour for tinted themes: pale gold for major, pale dusk for minor.
+  MB.groundFor = function (mood) {
+    const th = MB.theme;
+    if (!th.tinted) return th.bg;
+    const maj = [246, 236, 216], min = [220, 224, 238];
+    const t = MB.clamp(mood.mode);
+    return [0, 1, 2].map((i) => lerp(min[i], maj[i], t));
+  };
   MB.hsla = (c, a) => `hsla(${c.h.toFixed(1)},${c.s.toFixed(1)}%,${c.l.toFixed(1)}%,${a})`;
 
   // Words for how the music feels right now.

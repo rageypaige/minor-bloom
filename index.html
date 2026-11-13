@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Minor Bloom</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Inter:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;1,400&family=Inter:wght@400&display=swap">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -13,47 +13,43 @@
   <div id="grain"></div>
 
   <!-- Start -->
-  <section id="intro" class="panel">
-    <h1>Minor Bloom</h1>
-    <p class="lede">Play a song and watch it paint itself.</p>
-    <button id="btn-device" class="primary">Listen to a tab or my computer</button>
-    <div class="alt">
-      <button id="btn-mic">Use the microphone</button>
-      <label class="file-btn">Choose an audio file<input id="file" type="file" accept="audio/*" hidden></label>
-    </div>
+  <main id="intro">
+    <h1>minor bloom</h1>
+    <nav class="links">
+      <button id="btn-device">listen to a tab</button>
+      <span class="dot">·</span>
+      <button id="btn-mic">microphone</button>
+      <span class="dot">·</span>
+      <label class="file-btn">audio file<input id="file" type="file" accept="audio/*" hidden></label>
+    </nav>
     <p id="error" class="error" hidden></p>
     <details class="help">
-      <summary>How to listen to Spotify</summary>
-      <ol>
-        <li>Use Chrome or Edge on a computer.</li>
-        <li>Open your song in the Spotify web player (<em>open.spotify.com</em>) in another tab and press play.</li>
-        <li>Back here, click <strong>Listen to a tab or my computer</strong>, choose the Spotify tab and switch on <strong>Share tab audio</strong>.</li>
-        <li>On Windows you can also share your <strong>entire screen</strong> with <strong>Share system audio</strong> on, which works with the Spotify app.</li>
-        <li>Keep this window visible while it paints. Browsers pause pages hidden in background tabs.</li>
-      </ol>
+      <summary>using spotify?</summary>
+      <p>In Chrome or Edge, play your song at open.spotify.com in another tab. Click <em>listen to a tab</em>, choose that tab and turn on <em>Share tab audio</em>. Keep this window visible while it paints.</p>
+      <p>On Windows you can share your entire screen with <em>Share system audio</em> on instead, which works with the Spotify app.</p>
     </details>
-  </section>
+  </main>
 
   <!-- While listening -->
   <div id="hud" hidden>
-    <div id="mood"><span id="mood-word">listening…</span><span id="mood-detail"></span></div>
-    <div class="hud-actions">
-      <button id="btn-clear" title="Wipe the canvas and keep painting. The finished painting still includes the whole song.">Clear canvas</button>
-      <button id="btn-finish">Finish painting</button>
-    </div>
+    <p id="mood"><span id="mood-word">listening…</span> <span id="mood-detail"></span></p>
+    <nav class="links">
+      <button id="btn-clear" title="Wipe the canvas and keep painting. The finished painting still includes the whole song.">clear</button>
+      <span class="dot">·</span>
+      <button id="btn-finish">finish</button>
+    </nav>
   </div>
 
   <!-- Finished painting -->
   <section id="finale" hidden>
     <div class="frame"><canvas id="final" width="2400" height="1600"></canvas></div>
-    <div class="finale-bar">
-      <input id="title" type="text" placeholder="Name this painting (the song’s title?)" maxlength="80">
-      <p id="caption"></p>
-      <div class="finale-actions">
-        <button id="btn-save" class="primary" disabled>Painting…</button>
-        <button id="btn-again">Paint another song</button>
-      </div>
-    </div>
+    <input id="title" type="text" placeholder="name this painting" maxlength="80">
+    <p id="caption"></p>
+    <nav class="links">
+      <button id="btn-save" disabled>painting…</button>
+      <span class="dot">·</span>
+      <button id="btn-again">paint another</button>
+    </nav>
   </section>
 
   <script src="js/brush.js"></script>
