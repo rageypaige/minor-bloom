@@ -100,3 +100,5 @@ h1 { font-weight: 400; font-size: 44px; margin: 0 0 14px; letter-spacing: 0.01em
 /* Phones can't share tab or system audio: hide that option there */
 html[data-tab="no"] .tab-only { display: none; }
 html:not([data-tab="no"]) .phone-only { display: none; }
+/* saving mid-song is an atmosphere thing */
+html[data-view="paint"] .atmos-only { display: none; }

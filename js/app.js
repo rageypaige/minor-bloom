@@ -1,4 +1,4 @@
-// Wires everything together: start screen → live painting → finished painting.
+// Wires everything together: start screen → listening → the finished still or painting.
 (function () {
   const MB = window.MB;
   const $ = (s) => document.querySelector(s);
@@ -130,17 +130,18 @@
     finalCanvas.classList.add('reveal');
     $('#btn-save').disabled = false;
     $('#btn-save').textContent = view === 'atmosphere' ? 'save still' : 'save painting';
+    $('#title').placeholder = view === 'atmosphere' ? 'name this moment' : 'name this painting';
     show($('#finale'), true);
   }
 
-  function save() {
-    const W = finalCanvas.width, H = finalCanvas.height;
+  // Download a canvas as a PNG, with an optional title and a small caption.
+  function downloadStill(src, title, caption, fallbackName) {
+    const W = src.width, H = src.height;
     const out = document.createElement('canvas');
     out.width = W;
     out.height = H;
     const c = out.getContext('2d');
-    c.drawImage(finalCanvas, 0, 0);
-    const title = $('#title').value.trim();
+    c.drawImage(src, 0, 0);
     const k = Math.min(W, H) / 1350;
     c.textAlign = 'right';
     c.fillStyle = MB.theme.dark ? 'rgba(244, 240, 234, 0.8)' : 'rgba(30, 24, 34, 0.72)';
@@ -150,15 +151,35 @@
     }
     c.font = `${Math.round(26 * k)}px Inter, system-ui, sans-serif`;
     c.fillStyle = MB.theme.dark ? 'rgba(244, 240, 234, 0.55)' : 'rgba(30, 24, 34, 0.55)';
-    c.fillText(`${summary.caption} · Minor Bloom`, W - 70 * k, H - 62 * k);
+    c.fillText(`${caption} · Minor Bloom`, W - 70 * k, H - 62 * k);
     out.toBlob((blob) => {
       const a = document.createElement('a');
-      const slug = (title || 'painting').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      a.download = `minor-bloom-${slug || 'painting'}.png`;
+      const slug = (title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      a.download = `minor-bloom-${slug || fallbackName}.png`;
       a.href = URL.createObjectURL(blob);
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     }, 'image/png');
+  }
+
+  function save() {
+    downloadStill(finalCanvas, $('#title').value.trim(), summary.caption, view === 'atmosphere' ? 'moment' : 'painting');
+  }
+
+  // Save the sky as it is right now, without stopping the music.
+  let snapTimer = null;
+  function snap() {
+    if (state !== 'listening' || view !== 'atmosphere' || !atmos || !listener) return;
+    const secs = Math.round(listener.analyzer.elapsed);
+    const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    const parts = [time];
+    if (hud && hud.key) parts.push(`leaning ${hud.key}`);
+    if (hud && hud.word) parts.push(hud.word);
+    downloadStill(atmos.capture(lastF || idleMood), '', parts.join(' · '), `moment-${time.replace(':', '-')}`);
+    const b = $('#btn-snap');
+    b.textContent = 'saved';
+    clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => { b.textContent = 'save'; }, 1600);
   }
 
   function again() {
@@ -292,6 +313,7 @@
   });
   $('#btn-finish').addEventListener('click', finish);
   $('#btn-clear').addEventListener('click', clearCanvas);
+  $('#btn-snap').addEventListener('click', snap);
   $('#btn-save').addEventListener('click', save);
   $('#btn-again').addEventListener('click', again);
   document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));

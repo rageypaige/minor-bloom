@@ -50,7 +50,8 @@ Switch on the start screen (*atmosphere · paint*); your choice is remembered.
   Far behind it is a faint night sky: sparse stars that twinkle slowly, hide
   behind bright fog, show more in quiet passages, and glint now and then with
   a cymbal or a bright high note.
-  Quiet passages soften and open up. **finish** keeps a still you can save.
+  Quiet passages soften and open up. **save** keeps a still of
+  the moment while the music plays on; **finish** ends with one you can name.
   Needs WebGL2 (current Chrome, Edge, Safari, Firefox); otherwise paint is used.
 - **Paint**: flowing brushwork while you listen, with a permanent textured
   painting revealed at the end.
