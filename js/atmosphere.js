@@ -37,7 +37,7 @@
   // internal texture; edge: how broken the feathered edge is; fold: base
   // folding; drift: speed on the shared current; grow: seconds to open out.
   const KINDS = {
-    field: { layer: 0, size: [0.6, 1.05], aspect: [0.9, 1.8], span: [90, 180], grow: 14, sil: 0.9, fall: 1.0, tex: 0.3, edge: 0.45, fold: 0.25, drift: 0.3, lum: 1, sat: 0.36 },
+    field: { layer: 0, size: [0.6, 1.05], aspect: [0.9, 1.8], span: [90, 180], grow: 14, sil: 0.9, fall: 1.0, tex: 0.12, edge: 0.45, fold: 0.25, drift: 0.3, lum: 1, sat: 0.36 },
     wash:  { layer: 1, size: [0.3, 0.5],  aspect: [1.2, 2.2], span: [35, 70],  grow: 8,  sil: 1.0, fall: 1.25, tex: 0.5, edge: 0.65, fold: 0.35, drift: 0.55, lum: 0.55, sat: 0.48 },
     bloom: { layer: 1, size: [0.11, 0.2], aspect: [0.8, 1.35], span: [14, 32], grow: 3.5, sil: 0.85, fall: 2.6, tex: 0.65, edge: 0.75, fold: 0.25, drift: 0.8, lum: 1.0, sat: 0.6 },
     veil:  { layer: 1, size: [0.17, 0.27], aspect: [2.4, 3.8], span: [20, 45],  grow: 5,  sil: 1.0, fall: 0.95, tex: 0.85, edge: 1.0, fold: 0.85, drift: 1.0, lum: 0.5, sat: 0.55 },
@@ -66,9 +66,10 @@ void main(){
   float asp = u_res.x / u_res.y;
   vec2 p = vec2((uv.x - .5) * asp, uv.y - .5);
   float t = u_time;
-  // the air itself: a faint haze, slowly moving, tinted by the palette
-  float h = fbm(ROT * p * 1.2 + vec2(t * .011, -t * .007) + .3 * vec2(fbm(p * .7 + 3.1), fbm(p * .7 - 5.3)));
-  vec3 col = u_tint * (.25 + 1.6 * h * h * h) * u_haze;
+  // the air itself: a faint, broad tint of the palette, nearly still and
+  // without blotches, so the background stays calm behind the forms
+  float h = fbm(ROT * p * .45 + vec2(t * .0015, -t * .001));
+  vec3 col = u_tint * (.55 + .5 * h) * u_haze * .7;
   for (int i = 0; i < ${MAXF}; i++) {
     if (i >= u_n) break;
     vec4 A = fA[i], B = fB[i], C = fC[i], D = fD[i], E = fE[i];
@@ -152,10 +153,13 @@ void main(){
     float d = length(gl_FragCoord.xy - P.xy);
     col += vec3(1., .97, .92) * P.w * smoothstep(P.z, P.z * .55, d);
   }
-  // film grain everywhere, a little stronger in the light
-  float g = hash(gl_FragCoord.xy + fract(u_time * 7.13) * vec2(311., 173.)) - .5;
+  // film grain everywhere, a little stronger in the light. It changes about
+  // 12 times a second, like film, rather than every frame, which would read
+  // as static or blowing dust in the dark areas.
+  float gf = floor(u_time * 12.);
+  float g = hash(gl_FragCoord.xy + fract(gf * .618) * vec2(311., 173.) + vec2(mod(gf, 97.), 0.)) - .5;
   float lum = dot(col, vec3(.3, .59, .11));
-  col += g * (.04 + .1 * lum);
+  col += g * (.025 + .11 * lum);
   col *= 1. + g * .06;
   o = vec4(col, 1.);
 }`;
@@ -513,7 +517,7 @@ void main(){
         // growth: opens out, then keeps spreading slowly as it thins
         g.grow = (1 - Math.exp(-g.age / g.growTau)) * (1 + g.age * 0.005);
         // MID: internal movement; each layer has its own pace
-        const pace = K.layer === 0 ? 0.35 : 1;
+        const pace = K.layer === 0 ? 0.12 : 1;
         g.billowKick *= Math.exp(-dt / 1.2);
         g.billow += dt * pace * (0.1 + 0.4 * mid + 0.4 * tension + 1.4 * Math.exp(-g.age / g.growTau) + g.billowKick);
 
@@ -529,8 +533,9 @@ void main(){
         else g.rot += MB.noise3(g.seed, t * 0.02, 9) * 0.02 * dt;
 
         // BASS: larger forms expand and are gently displaced, with a long release
-        const big = clamp((g.size - 0.12) / 0.4);
-        const bt = bass * (0.15 + 0.6 * big);
+        // (the distant layer stays put: it's the backdrop, not a performer)
+        const big = K.layer === 0 ? 0 : clamp((g.size - 0.12) / 0.4);
+        const bt = K.layer === 0 ? 0 : bass * (0.15 + 0.6 * big);
         g.swell += (bt - g.swell) * ease(dt, bt > g.swell ? 0.2 : 2.2);
         g.rip += dt * 4;
         g.ripAmp *= Math.exp(-dt / 1.2);
@@ -648,7 +653,7 @@ void main(){
         const push = g.swell * g.size * 0.18;
         A.set([g.x + (dx / dl) * push, g.y + (dy / dl) * push, scale * Math.sqrt(stretch), scale / Math.sqrt(stretch)], i * 4);
         // MID: folding; quiet passages fold less
-        const warp = (K.fold + mid * 0.6 * (far ? 0.4 : 1) + lush * 0.2) * (1 - 0.35 * quiet);
+        const warp = far ? K.fold : (K.fold + mid * 0.6 + lush * 0.2) * (1 - 0.35 * quiet);
         // a fresh drop is densest; it thins as it spreads
         const fresh = 0.75 + 0.5 * Math.exp(-g.age / (g.growTau * 3));
         const lum = far
