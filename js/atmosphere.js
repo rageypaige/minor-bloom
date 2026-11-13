@@ -24,11 +24,14 @@
 //   distant  - broad, barely visible colour fields, very slow
 //   midground - washes, blooms, veils and wisps with flowing texture
 //   foreground - a few small concentrated lights, more sharply defined
+// Far behind it all is a faint night sky: sparse stars that twinkle slowly,
+// hide behind bright fog, show more in quiet passages, and now and then
+// glint with a cymbal or a bright high note.
 (function () {
   const MB = (window.MB = window.MB || {});
   const clamp = MB.clamp;
   const rnd = (a, b) => a + Math.random() * (b - a);
-  const MAXF = 12, MAXP = 24, MAXE = 6;
+  const MAXF = 12, MAXP = 24, MAXE = 6, MAXS = 70;
   const ease = (dt, tau) => 1 - Math.exp(-dt / tau);
   const angleTo = (d) => Math.atan2(Math.sin(d), Math.cos(d));
 
@@ -124,6 +127,7 @@ uniform sampler2D u_scene, u_trace; uniform vec2 u_res;
 uniform float u_time, u_exposure, u_traceMix, u_vig; uniform vec3 u_base;
 uniform vec4 u_pts[${MAXP}]; uniform int u_np;
 uniform vec4 u_emb[${MAXE}]; uniform vec3 u_embC[${MAXE}]; uniform int u_ne;
+uniform vec4 u_stars[${MAXS}]; uniform int u_ns;
 out vec4 o;
 ${NOISE}
 void main(){
@@ -141,6 +145,18 @@ void main(){
     float de = exp(-rr * rr * 2.6);
     de *= smoothstep(.02, .5, de + (noise(dd * 6. + u_time * .3) - .5) * .25);
     L += u_embC[i] * Em.w * de;
+  }
+  // the night sky behind it all: faint stars that hide behind bright fog
+  float fog = dot(L, vec3(.3, .59, .11));
+  float clear = 1. - smoothstep(.04, .35, fog);
+  if (clear > .01) {
+    for (int i = 0; i < ${MAXS}; i++) {
+      if (i >= u_ns) break;
+      vec4 S = u_stars[i];
+      float d = length(gl_FragCoord.xy - S.xy);
+      if (d > S.z * 3.) continue;
+      L += vec3(.9, .93, 1.) * S.w * clear * (smoothstep(S.z, S.z * .3, d) + .25 * exp(-d * d / (S.z * S.z * 4.)));
+    }
   }
   vec3 col = u_base + (1. - exp(-L * u_exposure));
   // during a build the edges draw in toward darkness
@@ -254,7 +270,28 @@ void main(){
       this.traces = [this._target(sw, shh), this._target(sw, shh)];
     }
 
+    // A sparse, uneven scattering of stars (positions in 0..1 screen space).
+    _makeStars() {
+      const seed = rnd(0, 50);
+      this.stars = [];
+      let tries = 0;
+      while (this.stars.length < MAXS && tries++ < 4000) {
+        const x = Math.random(), y = Math.random();
+        // gather in some regions, leave others empty
+        const dens = 0.5 + 0.5 * MB.noise3(x * 2.2, y * 2.2, seed);
+        if (Math.random() > dens * dens * 1.6) continue;
+        const r = Math.random();
+        this.stars.push({
+          x, y,
+          size: 0.9 + r * r * 1.2,
+          base: 0.08 + Math.pow(Math.random(), 3) * 0.45, // mostly faint, a few brighter
+          tw: rnd(0.25, 1.1), ph: rnd(0, Math.PI * 2), glint: 0,
+        });
+      }
+    }
+
     reset() {
+      if (!this.stars) this._makeStars();
       this.forms = [];
       this.points = [];
       this.embers = [];
@@ -608,6 +645,18 @@ void main(){
       }
       this.embers = this.embers.filter((e) => e.age < e.life);
 
+      // NIGHT SKY: a very slow drift; highs make a star glint now and then
+      this.skyVis = (this.skyVis ?? 0.6) + (clamp(0.5 + 0.45 * this.quiet - 0.25 * lush) - (this.skyVis ?? 0.6)) * ease(dt, 4);
+      for (const st of this.stars) {
+        st.x = (st.x + dt * 0.0012 + 1) % 1;
+        st.glint *= Math.exp(-dt / 0.7);
+      }
+      const gr = (f.spark ? 0.8 : 0) + high * high * 0.6;
+      if (Math.random() < gr * dt) {
+        const st = this.stars[Math.floor(Math.random() * this.stars.length)];
+        if (st) st.glint = Math.min(1, st.glint + 0.8);
+      }
+
       // background tint follows the palette
       const tint = [0, 0, 0];
       let tw = 0;
@@ -745,6 +794,16 @@ void main(){
       gl.uniform4fv(P.u.u_emb, em);
       gl.uniform3fv(P.u.u_embC, emc);
       gl.uniform1i(P.u.u_ne, ne);
+      const sa = new Float32Array(MAXS * 4);
+      let ns = 0;
+      for (const st of this.stars) {
+        const tw = 0.7 + 0.3 * Math.sin(this.t * st.tw + st.ph);
+        const b = (st.base * tw + st.glint * 0.6) * (this.skyVis ?? 0.6);
+        sa.set([st.x * this.c.width, st.y * this.c.height, st.size * this.dpr, b], ns * 4);
+        ns++;
+      }
+      gl.uniform4fv(P.u.u_stars, sa);
+      gl.uniform1i(P.u.u_ns, ns);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
