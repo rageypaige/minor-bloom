@@ -40,11 +40,11 @@
   // internal texture; edge: how broken the feathered edge is; fold: base
   // folding; drift: speed on the shared current; grow: seconds to open out.
   const KINDS = {
-    field: { layer: 0, size: [0.6, 1.05], aspect: [0.9, 1.8], span: [90, 180], grow: 14, sil: 0.9, fall: 1.0, tex: 0.12, edge: 0.45, fold: 0.25, drift: 0.3, lum: 1, sat: 0.36 },
-    wash:  { layer: 1, size: [0.3, 0.5],  aspect: [1.2, 2.2], span: [35, 70],  grow: 8,  sil: 1.0, fall: 1.25, tex: 0.5, edge: 0.65, fold: 0.35, drift: 0.55, lum: 0.55, sat: 0.48 },
-    bloom: { layer: 1, size: [0.11, 0.2], aspect: [0.8, 1.35], span: [14, 32], grow: 3.5, sil: 0.85, fall: 2.6, tex: 0.65, edge: 0.75, fold: 0.25, drift: 0.8, lum: 1.0, sat: 0.6 },
-    veil:  { layer: 1, size: [0.17, 0.27], aspect: [2.4, 3.8], span: [20, 45],  grow: 5,  sil: 1.0, fall: 0.95, tex: 0.85, edge: 1.0, fold: 0.85, drift: 1.0, lum: 0.5, sat: 0.55 },
-    wisp:  { layer: 1, size: [0.16, 0.27], aspect: [0.7, 1.4], span: [15, 38],  grow: 4,  sil: 1.1, fall: 1.7, tex: 1.0, edge: 1.0, fold: 1.0, drift: 0.9, lum: 0.85, sat: 0.6 },
+    field: { layer: 0, size: [0.6, 1.05], aspect: [0.9, 1.8], span: [90, 180], grow: 14, sil: 0.9, fall: 1.0, tex: 0.12, edge: 0.45, fold: 0.25, drift: 0.3, lum: 1, sat: 0.42 },
+    wash:  { layer: 1, size: [0.3, 0.5],  aspect: [1.2, 2.2], span: [35, 70],  grow: 8,  sil: 1.0, fall: 1.25, tex: 0.5, edge: 0.65, fold: 0.35, drift: 0.55, lum: 0.55, sat: 0.58 },
+    bloom: { layer: 1, size: [0.11, 0.2], aspect: [0.8, 1.35], span: [14, 32], grow: 3.5, sil: 0.85, fall: 2.6, tex: 0.65, edge: 0.75, fold: 0.25, drift: 0.8, lum: 1.0, sat: 0.72 },
+    veil:  { layer: 1, size: [0.17, 0.27], aspect: [2.4, 3.8], span: [20, 45],  grow: 5,  sil: 1.0, fall: 0.95, tex: 0.85, edge: 1.0, fold: 0.85, drift: 1.0, lum: 0.5, sat: 0.66 },
+    wisp:  { layer: 1, size: [0.16, 0.27], aspect: [0.7, 1.4], span: [15, 38],  grow: 4,  sil: 1.1, fall: 1.7, tex: 1.0, edge: 1.0, fold: 1.0, drift: 0.9, lum: 0.85, sat: 0.72 },
   };
 
   const VS = `#version 300 es
@@ -379,7 +379,7 @@ void main(){
       const mood = { ...f, mode: f.chordQual ? 0.9 : 0.1, hueShift: Math.sin((fifths / 12) * Math.PI * 2) * 22 };
       const c = MB.moodHSL(pal, mood);
       const l = clamp(c.l * 0.75 + 16 + (f.chordQual ? 6 : -8), 26, 70);
-      return hslToRgb(c.h, c.s * 0.8 * satMul, l);
+      return hslToRgb(c.h, c.s * 0.92 * satMul, l);
     }
 
     // An arrival after a build: the scene breaks open.
@@ -393,7 +393,8 @@ void main(){
         if (old) old.span = old.age; // make room
         this.forms = this.forms.filter((g) => g.age < g.span);
       }
-      this._spawn('bloom', { at: fp, size: rnd(0.45, 0.6), span: rnd(16, 24), grow: 1.6, dom: true, lumMul: 1.15 });
+      const k = 0.6 + 0.4 * (this.intensity ?? 0.5); // gentler songs get a gentler release
+      this._spawn('bloom', { at: fp, size: rnd(0.45, 0.6) * k, span: rnd(16, 24), grow: 1.6, dom: true, lumMul: 1.15 * k });
       for (const g of this.forms) g.billowKick += 1.2;
       this.phase = Math.PI; // breathe out from here
       this.domCool = Math.max(this.domCool, 25);
@@ -474,6 +475,16 @@ void main(){
       if (this.relCool <= 0 && !f.silent && (arrival || toppedOut)) { this._release(f); this.tensionPeak = 0; }
       this.release = (this.release ?? 0) * Math.exp(-dt / 6);
       const tension = this.tension, release = this.release;
+      // INTENSITY: a slow, song-level sense of how big the music is: how loud
+      // it really is (not relative to itself), how full, and how busy the
+      // rhythm is. Soft, slow songs stay smaller and dimmer throughout.
+      this.rmsL = (this.rmsL ?? 0.05) + ((f.silent ? 0 : f.rms || 0) - (this.rmsL ?? 0.05)) * ease(dt, 3);
+      this.onsetRate = (this.onsetRate ?? 1) + ((f.beat ? 1 / Math.max(dt, 1e-3) : 0) - (this.onsetRate ?? 1)) * ease(dt, 4);
+      const busy = clamp(this.onsetRate / 3.5);
+      const intRaw = clamp(0.35 * clamp(this.rmsL / 0.12) + 0.3 * lush + 0.2 * busy + 0.15 * clamp((this.bpm - 80) / 60) * busy);
+      this.intensity = (this.intensity ?? 0.5) + (intRaw - (this.intensity ?? 0.5)) * ease(dt, intRaw > (this.intensity ?? 0.5) ? 8 : 14);
+      const intensity = this.intensity;
+
       // how vivid colour is: deeper at emotional high points, toward grey in quiet
       this.satMul = clamp(0.9 + 0.5 * release + 0.25 * peak - 0.25 * this.quiet - 0.15 * tension, 0.45, 1.5);
 
@@ -581,7 +592,7 @@ void main(){
 
         // brightness: kept for peaks, and for the dominant form
         const near = Math.exp(-Math.hypot(g.x - this.focus.x, g.y - this.focus.y) * 2);
-        let glowT = K.layer === 1 ? Math.max(peak, up * 0.3) * near : 0;
+        let glowT = K.layer === 1 ? Math.max(peak, up * 0.3) * near * (0.4 + 0.6 * intensity) : 0;
         if (g.dom) glowT = Math.max(glowT, 0.55 + 0.45 * peak);
         g.glow += (glowT - g.glow) * ease(dt, glowT > g.glow ? 0.3 : 3);
         // while one form dominates, the others step back
@@ -687,6 +698,9 @@ void main(){
       const share = 1 / Math.sqrt(Math.max(1, nb * 0.7));
       const up = this.up || 0, quiet = this.quiet ?? 0.5;
       const tension = this.tension || 0, release = this.release || 0;
+      const intensity = this.intensity ?? 0.5;
+      const sizeK = 0.62 + 0.38 * intensity;   // gentle songs: smaller forms
+      const lightK = 0.5 + 0.5 * intensity;    // gentle songs: softer light
       // breathing, a little deeper when the music is fuller
       const depth = 0.35 + 0.65 * clamp(vol * 1.3);
       const br = ((this.breath ?? 0.5) - 0.5) * 2 * depth;          // -1 .. 1
@@ -696,7 +710,7 @@ void main(){
         const far = K.layer === 0;
         // VOLUME: fullness, scale and luminosity; BASS: expansion
         const b = far ? brFar : br;
-        const scale = g.size * (0.15 + 0.85 * Math.min(g.grow, 1.4)) * (0.78 + 0.45 * vol) * (1 + 0.28 * g.swell)
+        const scale = g.size * (far ? 1 : sizeK) * (0.15 + 0.85 * Math.min(g.grow, 1.4)) * (0.78 + 0.45 * vol) * (1 + 0.28 * g.swell)
           * (1 - 0.18 * tension + 0.15 * release) * (1 + 0.06 * b);
         const stretch = g.aspect * (1 + mid * 0.3 * Math.sin(g.seed + this.t * 0.07));
         // BASS: larger forms are gently pushed away from the centre of focus
@@ -709,7 +723,7 @@ void main(){
         const fresh = 0.75 + 0.5 * Math.exp(-g.age / (g.growTau * 3));
         const lum = far
           ? 0.025 + 0.04 * vol + 0.03 * lush
-          : K.lum * g.lumMul * (0.07 + 0.42 * vol + 0.2 * up) * fresh * share * (g.dim ?? 1);
+          : K.lum * g.lumMul * (0.07 + 0.42 * vol + 0.2 * up) * fresh * share * (g.dim ?? 1) * lightK;
         B.set([g.rot, warp, g.seed, lum * g.presence * (1 + 0.14 * b) * (1 + 0.18 * release)], i * 4);
         const c = g.col || [0.5, 0.5, 0.5];
         C.set([c[0], c[1], c[2], g.glow * g.presence], i * 4);
@@ -768,7 +782,7 @@ void main(){
       gl.uniform1i(P.u.u_trace, 1);
       gl.uniform2f(P.u.u_res, this.c.width, this.c.height);
       gl.uniform1f(P.u.u_time, this.t);
-      gl.uniform1f(P.u.u_exposure, 1.3 + 0.15 * (this.up || 0) + 0.15 * (this.release || 0));
+      gl.uniform1f(P.u.u_exposure, 1.1 + 0.3 * (this.intensity ?? 0.5) + 0.15 * (this.up || 0) + 0.15 * (this.release || 0));
       gl.uniform1f(P.u.u_vig, clamp(0.12 + 0.6 * (this.tension || 0) - 0.12 * (this.release || 0), 0, 0.8));
       gl.uniform1f(P.u.u_traceMix, 0.5);
       const base = [0.055, 0.055, 0.062].map((v, i) => v + this.tint[i] * 0.03);
