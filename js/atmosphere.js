@@ -473,6 +473,11 @@ void main(){
       // slow versions for the hearts and tendrils: they swell, never flicker
       this.volS = (this.volS ?? vol) + (vol - (this.volS ?? vol)) * ease(dt, 1.5);
       this.midS = (this.midS ?? mid) + (mid - (this.midS ?? mid)) * ease(dt, 1.5);
+      // what the eye sees follows phrases, not syllables: brightness and size
+      // use a slow, smoothed volume, and the shimmer a smoothed treble, so a
+      // singer's words don't make the light twitch
+      this.volR = (this.volR ?? vol) + (vol - (this.volR ?? vol)) * ease(dt, vol > (this.volR ?? vol) ? 0.9 : 2.5);
+      this.highS = (this.highS ?? high) + (high - (this.highS ?? high)) * ease(dt, 1.2);
       this.eLong += (f.energy - this.eLong) * ease(dt, 20);
       const peak = clamp((f.energy - this.eLong - 0.08) * 3);
       // quiet passages soften and open up
@@ -663,7 +668,9 @@ void main(){
 
       // HIGHS: fleeting fine points inside the brighter midground forms
       const hosts = this.forms.filter((g) => KINDS[g.kind].layer === 1 && g.presence > 0.4);
-      const rate = high * high * 5 + (f.spark ? 0.6 : 0);
+      // points come mostly from cymbals and hats (drive), not from the
+      // 's' and 't' sounds in lyrics
+      const rate = (this.highS * this.highS * 5 + (f.spark ? 0.6 : 0)) * (0.2 + 0.8 * (this.drive ?? 0.5));
       let n = rate > 0 ? Math.floor(rate * dt + Math.random()) : 0;
       while (n-- > 0 && hosts.length && this.points.length < MAXP) {
         const g = hosts[Math.floor(Math.random() * hosts.length)];
@@ -705,7 +712,8 @@ void main(){
     // ---------- Drawing ----------
     render(f, dt) {
       const gl = this.gl;
-      const lush = (f.lush || 0) * (0.35 + 0.65 * (this.drive ?? 0.5)), vol = this.vol, mid = f.mid ?? 0.3, high = f.high || 0;
+      const lush = (f.lush || 0) * (0.35 + 0.65 * (this.drive ?? 0.5));
+      const vol = this.volR ?? this.vol, mid = this.midS ?? f.mid ?? 0.3, high = this.highS ?? f.high ?? 0;
       const A = new Float32Array(MAXF * 4), B = new Float32Array(MAXF * 4);
       const C = new Float32Array(MAXF * 4), D = new Float32Array(MAXF * 4), E = new Float32Array(MAXF * 4);
       const Fh = new Float32Array(MAXF * 4);
