@@ -41,7 +41,7 @@
   // heart: how hot its core glows; fil: how strongly filaments stream out.
   const KINDS = {
     field: { layer: 0, size: [0.6, 1.05], aspect: [0.9, 1.8], span: [90, 180], grow: 14, sil: 0.9, fall: 1.0, tex: 0.12, edge: 0.45, fold: 0.25, drift: 0.3, lum: 1, sat: 0.42, heart: 0, fil: 0 },
-    wash:  { layer: 1, size: [0.3, 0.5],  aspect: [1.2, 2.2], span: [35, 70],  grow: 8,  sil: 1.0, fall: 1.25, tex: 0.5, edge: 0.65, fold: 0.35, drift: 0.55, lum: 0.55, sat: 0.58, heart: 0.25, fil: 0.3 },
+    wash:  { layer: 1, size: [0.26, 0.42], aspect: [1.2, 2.2], span: [35, 70],  grow: 8,  sil: 1.0, fall: 1.25, tex: 0.5, edge: 0.65, fold: 0.35, drift: 0.55, lum: 0.45, sat: 0.58, heart: 0.25, fil: 0.3 },
     bloom: { layer: 1, size: [0.11, 0.2], aspect: [0.8, 1.35], span: [14, 32], grow: 3.5, sil: 0.85, fall: 2.6, tex: 0.65, edge: 0.75, fold: 0.25, drift: 0.8, lum: 1.0, sat: 0.72, heart: 1.0, fil: 0.8 },
     veil:  { layer: 1, size: [0.17, 0.27], aspect: [2.4, 3.8], span: [20, 45],  grow: 5,  sil: 1.0, fall: 0.95, tex: 0.85, edge: 1.0, fold: 0.85, drift: 1.0, lum: 0.5, sat: 0.66, heart: 0.3, fil: 0.45 },
     wisp:  { layer: 1, size: [0.16, 0.27], aspect: [0.7, 1.4], span: [15, 38],  grow: 4,  sil: 1.1, fall: 1.7, tex: 1.0, edge: 1.0, fold: 1.0, drift: 0.9, lum: 0.85, sat: 0.72, heart: 0.6, fil: 1.0 },
@@ -157,7 +157,7 @@ void main(){
   vec3 L = texture(u_scene, uv).rgb * .8 + texture(u_trace, uv).rgb * u_traceMix;
   // the night sky behind it all: faint stars that hide behind bright fog
   float fog = dot(L, vec3(.3, .59, .11));
-  float clear = 1. - smoothstep(.04, .35, fog);
+  float clear = 1. - smoothstep(.07, .5, fog); // stars show through thin fog
   if (clear > .01) {
     for (int i = 0; i < ${MAXS}; i++) {
       if (i >= u_ns) break;
@@ -300,7 +300,7 @@ void main(){
         this.stars.push({
           x, y,
           size: 0.9 + r * r * 1.2,
-          base: 0.08 + Math.pow(Math.random(), 3) * 0.45, // mostly faint, a few brighter
+          base: 0.1 + Math.pow(Math.random(), 3) * 0.5, // mostly faint, a few brighter
           tw: rnd(0.25, 1.1), ph: rnd(0, Math.PI * 2), glint: 0,
         });
       }
@@ -597,7 +597,7 @@ void main(){
       let bf = this.forms.find((g) => g.role === 'bass' && g.age < g.span - 7);
       if (!this.idle) {
         if (!bf && this.bassOnT > 1.2 && this.forms.length < MAXF) {
-          bf = this._spawn('wash', { at: { x: this.focus.x + rnd(-0.2, 0.2) * asp, y: -0.3 + rnd(-0.05, 0.05) }, size: rnd(0.42, 0.55), grow: 3, span: 99999, role: 'bass' });
+          bf = this._spawn('wash', { at: { x: this.focus.x + rnd(-0.2, 0.2) * asp, y: -0.32 + rnd(-0.05, 0.05) }, size: rnd(0.32, 0.4), grow: 3, span: 99999, role: 'bass', lumMul: 0.75 });
         }
         if (bf && this.bassOffT > 3) bf.span = bf.age + 7;
       }
@@ -812,7 +812,8 @@ void main(){
       this.points = this.points.filter((p) => p.age < p.life);
 
       // NIGHT SKY: a very slow drift; highs make a star glint now and then
-      this.skyVis = (this.skyVis ?? 0.6) + (clamp(0.5 + 0.45 * this.quiet - 0.25 * lush) - (this.skyVis ?? 0.6)) * ease(dt, 4);
+      // the night stays: stars hold on through full passages too
+      this.skyVis = (this.skyVis ?? 0.7) + (clamp(0.68 + 0.32 * this.quiet - 0.08 * lush) - (this.skyVis ?? 0.7)) * ease(dt, 4);
       for (const st of this.stars) {
         st.x = (st.x + dt * 0.0012 + 1) % 1;
         st.glint *= Math.exp(-dt / 0.7);
@@ -877,7 +878,7 @@ void main(){
         // a fresh drop is densest; it thins as it spreads
         const fresh = 0.75 + 0.5 * Math.exp(-g.age / (g.growTau * 3));
         const lum = far
-          ? (0.025 + 0.04 * vol + 0.03 * lush) * lightK
+          ? (0.016 + 0.026 * vol + 0.016 * lush) * lightK
           : K.lum * g.lumMul * (0.07 + 0.42 * vol + 0.2 * up) * fresh * share * (g.dim ?? 1) * lightK;
         B.set([g.rot, warp, g.seed, lum * g.presence * (1 + 0.14 * b) * (1 + 0.18 * release)], i * 4);
         const c = g.col || [0.5, 0.5, 0.5];
@@ -907,7 +908,7 @@ void main(){
       gl.uniform1f(P.u.u_time, this.t);
       gl.uniform1f(P.u.u_high, high);
       // quiet passages keep the air thin and spacious
-      gl.uniform1f(P.u.u_haze, (0.5 + 0.5 * (this.intensity ?? 0.5)) * (0.07 + 0.2 * lush + 0.08 * vol) * (1 + 0.08 * br) * (1 - 0.3 * (this.tension || 0)) + 0.05 * (this.release || 0));
+      gl.uniform1f(P.u.u_haze, (0.5 + 0.5 * (this.intensity ?? 0.5)) * (0.045 + 0.11 * lush + 0.05 * vol) * (1 + 0.08 * br) * (1 - 0.3 * (this.tension || 0)) + 0.05 * (this.release || 0));
       gl.uniform3fv(P.u.u_tint, this.tint.map((v) => v * 0.22));
       gl.uniform1i(P.u.u_n, list.length);
       gl.uniform4fv(P.u.fA, A);
@@ -946,7 +947,7 @@ void main(){
       gl.uniform1f(P.u.u_time, this.t);
       gl.uniform1f(P.u.u_exposure, 1.1 + 0.42 * (this.intensity ?? 0.5) + 0.15 * (this.up || 0) + 0.15 * (this.release || 0));
       gl.uniform1f(P.u.u_vig, clamp(0.12 + 0.6 * (this.tension || 0) - 0.12 * (this.release || 0), 0, 0.8));
-      gl.uniform1f(P.u.u_traceMix, 0.5);
+      gl.uniform1f(P.u.u_traceMix, 0.4);
       const base = [0.034, 0.034, 0.042].map((v, i) => v + this.tint[i] * 0.03);
       gl.uniform3fv(P.u.u_base, base);
       const pts = new Float32Array(MAXP * 4);
