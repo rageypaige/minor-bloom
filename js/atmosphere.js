@@ -101,12 +101,13 @@ void main(){
     dens = max(dens, 0.);
     vec3 c = C.rgb * B.w * dens;
     // a luminous concentration, kept for strong moments
-    c += mix(C.rgb, vec3(1.), .22) * C.a * pow(dens, 2.4) * 1.2;
+    c += mix(C.rgb, vec3(1.), .15) * C.a * pow(dens, 2.4) * 1.0;
     // HEART: a hot, uneven core that leans toward white light
     vec3 hot = mix(C.rgb, vec3(1., .95, .88), .5);
     if (F.x > .001) {
       float rc = r * (1. + .45 * (noise(q * 3.2 + s * 9.) - .5));
-      c += hot * exp(-rc * rc * 10.) * F.x * B.w * 2.6;
+      float hh = exp(-rc * rc * 10.) * F.x * B.w * 2.4;
+      c += hot * hh / (1. + hh * 1.4); // a soft cap: glows, never burns out
     }
     // FILAMENTS: wispy streams of light curling out from the heart, slowly
     // drifting outward like the remains of an exploded star
@@ -163,7 +164,9 @@ void main(){
   }
   vec3 tm = 1. - exp(-L * u_exposure);
   // a gentle S-curve: deeper darks, brighter highlights
-  tm = mix(tm, tm * tm * (3. - 2. * tm), .38);
+  tm = mix(tm, tm * tm * (3. - 2. * tm), .25);
+  // and a soft shoulder so the very brightest light stays coloured, not white
+  tm = tm / (1. + .35 * max(tm - .6, 0.));
   vec3 col = u_base + tm;
   // during a build the edges draw in toward darkness
   float vd = length((uv - .5) * vec2(1.25, 1.)) * 1.5;
@@ -405,7 +408,7 @@ void main(){
         this.forms = this.forms.filter((g) => g.age < g.span);
       }
       const k = 0.6 + 0.4 * (this.intensity ?? 0.5); // gentler songs get a gentler release
-      this._spawn('bloom', { at: fp, size: rnd(0.45, 0.6) * k, span: rnd(16, 24), grow: 1.6, dom: true, lumMul: 1.15 * k });
+      this._spawn('bloom', { at: fp, size: rnd(0.45, 0.6) * k, span: rnd(16, 24), grow: 1.6, dom: true, lumMul: 1.0 * k });
       for (const g of this.forms) g.billowKick += 1.2;
       this.phase = Math.PI; // breathe out from here
       this.domCool = Math.max(this.domCool, 25);
@@ -572,7 +575,8 @@ void main(){
         const hearts = this.forms.filter((x) => KINDS[x.kind].heart > 0.2 && x.presence > 0.4 && x.pulseCool <= 0);
         if (hearts.length) {
           const g = hearts[Math.floor(Math.random() * hearts.length)];
-          g.pulse = Math.min(1, g.pulse + 0.45 + 0.55 * f.beatStrength);
+          const flare = (0.15 + 0.85 * (this.drive ?? 0.5)) * clamp((this.intensity ?? 0.5) * 1.6);
+          g.pulse = Math.min(1, g.pulse + (0.45 + 0.55 * f.beatStrength) * flare);
           g.pulseCool = (60 / clamp(this.bpm, 50, 190)) * 0.9;
         }
       }
@@ -747,9 +751,9 @@ void main(){
         E.set([g.sil, g.fall * (1 - 0.3 * quiet) * (1 + 0.4 * tension), g.tex * (1 - 0.35 * quiet), g.edge], i * 4);
         // hearts glow with volume and flare on beats; filaments stream with the
         // midrange; both stay gentler for soft songs
-        const gentle = this.idle ? 0.8 : 0.4 + 0.6 * intensity;
-        const heart = K.heart ? (K.heart * (0.35 + 0.65 * vol) * gentle + 0.9 * (g.pulse || 0)) * g.presence : 0;
-        const fil = K.fil ? (K.fil * (0.35 + 0.65 * mid) * gentle + 0.4 * (g.pulse || 0)) * g.presence : 0;
+        const gentle = this.idle ? 0.7 : 0.15 + 0.85 * Math.pow(intensity, 1.5);
+        const heart = K.heart ? (K.heart * (0.4 + 0.6 * vol) * gentle + 0.9 * (g.pulse || 0)) * g.presence : 0;
+        const fil = K.fil ? (K.fil * (0.35 + 0.65 * mid) * (0.25 + 0.75 * gentle) + 0.4 * (g.pulse || 0)) * g.presence : 0;
         Fh.set([heart, fil, g.twist || 0, 0], i * 4);
       });
 
@@ -804,7 +808,7 @@ void main(){
       gl.uniform1i(P.u.u_trace, 1);
       gl.uniform2f(P.u.u_res, this.c.width, this.c.height);
       gl.uniform1f(P.u.u_time, this.t);
-      gl.uniform1f(P.u.u_exposure, 1.22 + 0.38 * (this.intensity ?? 0.5) + 0.15 * (this.up || 0) + 0.15 * (this.release || 0));
+      gl.uniform1f(P.u.u_exposure, 1.1 + 0.42 * (this.intensity ?? 0.5) + 0.15 * (this.up || 0) + 0.15 * (this.release || 0));
       gl.uniform1f(P.u.u_vig, clamp(0.12 + 0.6 * (this.tension || 0) - 0.12 * (this.release || 0), 0, 0.8));
       gl.uniform1f(P.u.u_traceMix, 0.5);
       const base = [0.034, 0.034, 0.042].map((v, i) => v + this.tint[i] * 0.03);
