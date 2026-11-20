@@ -111,12 +111,14 @@ void main(){
     }
     // FILAMENTS: wispy streams of light curling out from the heart, slowly
     // drifting outward like the remains of an exploded star
-    if (F.y > .001) {
+    if (F.y > .001 && F.w > .01) {
       float ang = r * F.z;
       vec2 dir = mat2(cos(ang), sin(ang), -sin(ang), cos(ang)) * (q / (r + 1e-3));
       float fl = fbm(dir * 4.2 + vec2(r * .45 - D.w * .06, s * 3.));
       fl = smoothstep(.42, .74, fl);
-      float env = smoothstep(.08, .32, r) * exp(-r * .8);
+      // they reach only as far as they've grown, thinning out at the tips
+      float reachR = .3 + 2.8 * F.w;
+      float env = smoothstep(.08, .32, r) * exp(-r * .7) * (1. - smoothstep(reachR * .45, reachR, r));
       float wisp = .45 + .55 * fbm(q * 3.5 + vec2(s, tt));
       c += hot * fl * fl * env * wisp * F.y * B.w * 3.6;
     }
@@ -380,7 +382,7 @@ void main(){
         presence: 0, grow: 0, billow: 0, billowKick: 0,
         col: opts.col ? opts.col.slice() : null, swell: 0, rip: 0, ripAmp: 0, glow: 0,
         dom: !!opts.dom, split: false, lumMul: opts.lumMul || 1,
-        twist: rnd(-0.8, 0.8), pulse: 0, pulseCool: 0,
+        twist: rnd(-0.8, 0.8), reach: 0,
       };
       this.forms.push(g);
       return g;
@@ -468,6 +470,9 @@ void main(){
       this.vol += (lvl - this.vol) * ease(dt, lvl > this.vol ? 0.08 : 1.4);
       const vol = this.vol;
       const bass = f.bass || 0, mid = f.mid ?? 0.3, high = f.high || 0;
+      // slow versions for the hearts and tendrils: they swell, never flicker
+      this.volS = (this.volS ?? vol) + (vol - (this.volS ?? vol)) * ease(dt, 1.5);
+      this.midS = (this.midS ?? mid) + (mid - (this.midS ?? mid)) * ease(dt, 1.5);
       this.eLong += (f.energy - this.eLong) * ease(dt, 20);
       const peak = clamp((f.energy - this.eLong - 0.08) * 3);
       // quiet passages soften and open up
@@ -570,16 +575,6 @@ void main(){
         this._spawn('bloom');
         this.spawnCool = 1.2;
       }
-      // BEATS: a strong beat makes one heart flare, never all of them at once
-      if (f.beat && f.beatStrength > 0.3 && !f.silent) {
-        const hearts = this.forms.filter((x) => KINDS[x.kind].heart > 0.2 && x.presence > 0.4 && x.pulseCool <= 0);
-        if (hearts.length) {
-          const g = hearts[Math.floor(Math.random() * hearts.length)];
-          const flare = (0.15 + 0.85 * (this.drive ?? 0.5)) * clamp((this.intensity ?? 0.5) * 1.6);
-          g.pulse = Math.min(1, g.pulse + (0.45 + 0.55 * f.beatStrength) * flare);
-          g.pulseCool = (60 / clamp(this.bpm, 50, 190)) * 0.9;
-        }
-      }
       // BASS: a hit sends a soft pressure wave through one larger form
       if (f.bassHit) {
         const big = this.forms.filter((x) => x.size > 0.25 && x.presence > 0.3);
@@ -605,8 +600,13 @@ void main(){
         const pace = K.layer === 0 ? 0.12 : 1;
         g.billowKick *= Math.exp(-dt / 1.2);
         g.billow += dt * pace * (0.12 + 0.6 * mid + 0.4 * tension + 1.4 * Math.exp(-g.age / g.growTau) + g.billowKick);
-        g.pulse = (g.pulse || 0) * Math.exp(-dt / 0.35);
-        g.pulseCool = (g.pulseCool || 0) - dt;
+        // TENDRILS grow: a fresh form has none; they reach further out while
+        // the music sustains and swells, and draw back slowly when it quiets
+        if (K.fil) {
+          const gentleR = this.idle ? 0.7 : 0.15 + 0.85 * Math.pow(this.intensity ?? 0.5, 1.5);
+          const want = Math.min(1, g.grow) * (0.2 + 0.45 * this.volS + 0.35 * this.midS) * (0.4 + 0.6 * gentleR);
+          g.reach += (want - g.reach) * ease(dt, want > g.reach ? 3.5 : 7);
+        }
 
         // drift on one shared current; distant fields barely move
         const cx = MB.noise3(g.x * 0.6, g.y * 0.6, t * 0.018) * 0.03;
@@ -749,12 +749,12 @@ void main(){
         D.set([g.rip, g.ripAmp, 1, g.billow], i * 4);
         // quiet passages soften: lower falloff and gentler texture
         E.set([g.sil, g.fall * (1 - 0.3 * quiet) * (1 + 0.4 * tension), g.tex * (1 - 0.35 * quiet), g.edge], i * 4);
-        // hearts glow with volume and flare on beats; filaments stream with the
-        // midrange; both stay gentler for soft songs
+        // hearts swell with the (smoothed) music; tendrils glow with the
+        // midrange and reach as far as they've grown; both gentler for soft songs
         const gentle = this.idle ? 0.7 : 0.15 + 0.85 * Math.pow(intensity, 1.5);
-        const heart = K.heart ? (K.heart * (0.4 + 0.6 * vol) * gentle + 0.9 * (g.pulse || 0)) * g.presence : 0;
-        const fil = K.fil ? (K.fil * (0.35 + 0.65 * mid) * (0.25 + 0.75 * gentle) + 0.4 * (g.pulse || 0)) * g.presence : 0;
-        Fh.set([heart, fil, g.twist || 0, 0], i * 4);
+        const heart = K.heart ? K.heart * (0.4 + 0.6 * (this.volS ?? vol)) * gentle * g.presence : 0;
+        const fil = K.fil ? K.fil * (0.5 + 0.5 * (this.midS ?? mid)) * (0.25 + 0.75 * gentle) * g.presence : 0;
+        Fh.set([heart, fil, g.twist || 0, g.reach || 0], i * 4);
       });
 
       gl.bindVertexArray(null);
