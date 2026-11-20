@@ -102,27 +102,30 @@ void main(){
     vec3 c = C.rgb * B.w * dens;
     // a luminous concentration, kept for strong moments
     c += mix(C.rgb, vec3(1.), .15) * C.a * pow(dens, 2.4) * 1.0;
-    // HEART: a hot, uneven core that leans toward white light
+    // HEART: a warm, uneven glow at the core, broad and soft
     vec3 hot = mix(C.rgb, vec3(1., .95, .88), .5);
     if (F.x > .001) {
       float rc = r * (1. + .45 * (noise(q * 3.2 + s * 9.) - .5));
-      float hh = exp(-rc * rc * 10.) * F.x * B.w * 2.4;
+      float hh = exp(-rc * rc * 5.5) * F.x * B.w * 1.8;
       c += hot * hh / (1. + hh * 1.4); // a soft cap: glows, never burns out
     }
-    // FILAMENTS: wispy streams of light curling out from the heart, slowly
-    // drifting outward like the remains of an exploded star
+    // FILAMENTS: soft wisps that trail downstream with the drift, like smoke
+    // or a comet's tail, rather than radiating out on every side
     if (F.y > .001 && F.w > .01) {
       float ang = r * F.z;
       vec2 dir = mat2(cos(ang), sin(ang), -sin(ang), cos(ang)) * (q / (r + 1e-3));
-      float fl = fbm(dir * 4.2 + vec2(r * .45 - D.w * .06, s * 3.));
-      fl = smoothstep(.42, .74, fl);
+      float fl = fbm(dir * 2.6 + vec2(r * .45 - D.w * .06, s * 3.));
+      fl = smoothstep(.4, .72, fl);
       // they reach only as far as they've grown, thinning out at the tips
       float reachR = .3 + 2.8 * F.w;
       float env = smoothstep(.08, .32, r) * exp(-r * .7) * (1. - smoothstep(reachR * .45, reachR, r));
+      // which way the current is carrying this form, in its own space
+      vec2 fw = normalize(mat2(cr, sr, -sr, cr) * vec2(cos(D.z), sin(D.z)));
+      env *= .15 + .85 * smoothstep(-.2, .75, dot(q / (r + 1e-3), fw));
       float wisp = .45 + .55 * fbm(q * 3.5 + vec2(s, tt));
       c += hot * fl * fl * env * wisp * F.y * B.w * 3.6;
     }
-    col += c * D.z;
+    col += c;
   }
   o = vec4(col, 1.);
 }`;
@@ -383,6 +386,7 @@ void main(){
         col: opts.col ? opts.col.slice() : null, swell: 0, rip: 0, ripAmp: 0, glow: 0,
         dom: !!opts.dom, split: false, lumMul: opts.lumMul || 1,
         twist: rnd(-0.8, 0.8), reach: 0,
+        role: opts.role || null, // 'chord', 'bass' or 'voice' when tied to a part of the music
       };
       this.forms.push(g);
       return g;
@@ -396,6 +400,28 @@ void main(){
       const c = MB.moodHSL(pal, mood);
       const l = clamp(c.l * 0.75 + 16 + (f.chordQual ? 6 : -8), 26, 70);
       return hslToRgb(c.h, c.s * 0.92 * satMul, l);
+    }
+
+    // A new chord is born as a bloom in its own colour, a step around the
+    // focus from the previous one, so a progression becomes a little
+    // constellation; when it repeats, new blooms replace the oldest.
+    _chordBloom(f) {
+      this.chordAng = (this.chordAng ?? rnd(0, Math.PI * 2)) + rnd(0.9, 1.4);
+      const rad = 0.15 + 0.08 * Math.random() + 0.06 * (this.up || 0);
+      const x = clamp(this.focus.x + Math.cos(this.chordAng) * rad * 1.3, -0.55 * this.asp, 0.55 * this.asp);
+      const y = clamp(this.focus.y + Math.sin(this.chordAng) * rad, -0.48, 0.48);
+      const pal = Math.floor(rnd(0, 6));
+      const col = this._chordColour(f, pal, this.satMul || 1);
+      const kind = (this.up || 0) > 0.45 || Math.random() < 0.55 ? 'bloom' : Math.random() < 0.6 ? 'wisp' : 'veil';
+      const gap = this.chordGap ?? 3;
+      // each chord should visibly land, even in a soft verse
+      const lumMul = 1.5 + 0.6 * clamp(1 - (this.intensity ?? 0.5) * 1.6);
+      const g = this._spawn(kind, { at: { x, y }, pal, col, span: clamp(gap * 4, 9, 24), grow: 1.6 + gap * 0.2, role: 'chord', lumMul });
+      g.chordCol = col.slice();
+      g.chordAmt = 1;
+      // keep the constellation small: the oldest chords dissolve first
+      const chords = this.forms.filter((h) => h.role === 'chord' && h.age < h.span - 6).sort((a, b) => b.age - a.age);
+      for (const old of chords.slice(5)) old.span = Math.min(old.span, old.age + 6);
     }
 
     // An arrival after a build: the scene breaks open.
@@ -447,8 +473,11 @@ void main(){
       c.s *= satMul;
       // restrained: muted, with lightness kept in a soft middle range; the
       // distant layer is greyer and dimmer, like colour seen through haze
-      const l = clamp(c.l * 0.75 + 16, 30, 66) - (K.layer === 0 ? 6 : 0);
-      return hslToRgb(c.h, c.s * K.sat, l);
+      let l = clamp(c.l * 0.75 + 16, 30, 66) - (K.layer === 0 ? 6 : 0);
+      let sat = c.s * K.sat;
+      if (form.role === 'bass') { l -= 7; sat *= 0.9; }       // the bass: deeper
+      if (form.role === 'voice') { l += 9; sat *= 0.75; }     // the voice: paler, more luminous
+      return hslToRgb(c.h, sat, clamp(l, 18, 80));
     }
 
     update(f, dt) {
@@ -546,17 +575,69 @@ void main(){
       this.up = (this.up ?? 0) + (upRaw - (this.up ?? 0)) * ease(dt, upRaw > (this.up ?? 0) ? 1.5 : 5);
       const up = this.up;
 
-      // DENSITY: how many midground forms there are
+      // WHAT ARRIVES AND LEAVES follows the music itself:
+      //   chords - each new chord is born as a bloom in its colour
+      //   bass   - a broad, deep glow while the bass is playing
+      //   voice  - a pale light while someone sings, higher for higher notes
+      // A gentle fallback keeps the sky alive when the music holds still.
       const mids = this.forms.filter((x) => KINDS[x.kind].layer === 1 && x.age < x.span);
-      const want = this.idle ? 4 : Math.min(7, Math.round(1 + lush * 2.5 + vol * 0.8 + up * 2.2));
-      this.spawnCool -= dt;
-      if (mids.length < want && this.spawnCool <= 0 && !f.silent && this.forms.length < MAXF) {
-        this._spawn(this._pickKind(f));
-        this.spawnCool = this.idle ? rnd(0.6, 1.4) : rnd(1.5, 4) * (1 - up * 0.55);
+      const asp = this.asp;
+      this.sinceChord = (this.sinceChord ?? 99) + dt;
+      if (!this.idle && f.chordId && f.chordId !== this.lastChordBloom && !f.silent && (this.heardT || 0) > 2 && this.forms.length < MAXF) {
+        this.lastChordBloom = f.chordId;
+        this.chordGap = (this.chordGap ?? 3) + (clamp(this.sinceChord, 0.8, 8) - (this.chordGap ?? 3)) * 0.3;
+        this.sinceChord = 0;
+        this._chordBloom(f);
       }
-      if (mids.length > want + 1) {
-        const oldest = mids.filter((x) => !x.dom).reduce((a, b) => (a.age / a.span > b.age / b.span ? a : b), mids[0]);
-        oldest.span = Math.min(oldest.span, oldest.age + 8);
+
+      // the bass: enters when it's been playing for a moment, leaves when it stops
+      this.bassS = (this.bassS ?? 0) + (bass - (this.bassS ?? 0)) * ease(dt, 1);
+      this.bassOnT = this.bassS > 0.35 ? (this.bassOnT || 0) + dt : 0;
+      this.bassOffT = this.bassS < 0.15 ? (this.bassOffT || 0) + dt : 0;
+      let bf = this.forms.find((g) => g.role === 'bass' && g.age < g.span - 7);
+      if (!this.idle) {
+        if (!bf && this.bassOnT > 1.2 && this.forms.length < MAXF) {
+          bf = this._spawn('wash', { at: { x: this.focus.x + rnd(-0.2, 0.2) * asp, y: -0.3 + rnd(-0.05, 0.05) }, size: rnd(0.42, 0.55), grow: 3, span: 99999, role: 'bass' });
+        }
+        if (bf && this.bassOffT > 3) bf.span = bf.age + 7;
+      }
+
+      // the voice: a pale light while someone sings; it drifts higher for
+      // higher phrases and glows with the phrase (not with each word)
+      const mel = f.melody || {};
+      this.singT = mel.on ? 0 : (this.singT ?? 99) + dt;
+      if (mel.on) this.pitchS = (this.pitchS ?? mel.pitch) + (mel.pitch - (this.pitchS ?? mel.pitch)) * ease(dt, 2.5);
+      const vt = mel.on ? 0.5 + 0.5 * clamp((mel.loud || 0) * 1.5) : 0;
+      this.voiceLvl = (this.voiceLvl ?? 0) + (vt - (this.voiceLvl ?? 0)) * ease(dt, vt > (this.voiceLvl ?? 0) ? 0.8 : 2.5);
+      let vf = this.forms.find((g) => g.role === 'voice' && g.age < g.span - 6);
+      if (!this.idle) {
+        if (!vf && mel.on && this.forms.length < MAXF) {
+          vf = this._spawn('bloom', { at: { x: this.focus.x + rnd(-0.12, 0.12) * asp, y: this.focus.y + 0.1 }, size: 0.17, grow: 2.5, span: 99999, role: 'voice' });
+        }
+        if (vf && this.singT > 6) vf.span = vf.age + 6;
+        if (vf) {
+          const ty = clamp(this.focus.y + ((this.pitchS ?? 0.5) - 0.5) * 0.55, -0.4, 0.4);
+          vf.y += (ty - vf.y) * ease(dt, 3);
+          vf.lumMul = 0.5 + 0.8 * this.voiceLvl;
+        }
+      }
+
+      // fallback: the start screen, or long stretches without a chord change
+      const want = this.idle ? 4 : 3;
+      this.spawnCool -= dt;
+      const still = this.idle || (this.sinceChord > 7 && !f.silent);
+      if (still && mids.length < want && this.spawnCool <= 0 && this.forms.length < MAXF) {
+        this._spawn(this._pickKind(f));
+        this.spawnCool = this.idle ? rnd(0.6, 1.4) : rnd(3, 6);
+      }
+      // never too crowded: the oldest general forms give way first
+      if (mids.length > 8) {
+        const free = mids.filter((x) => !x.dom && !x.role);
+        const pool = free.length ? free : mids.filter((x) => x.role === 'chord');
+        if (pool.length) {
+          const oldest = pool.reduce((a, b) => (a.age / a.span > b.age / b.span ? a : b));
+          oldest.span = Math.min(oldest.span, oldest.age + 6);
+        }
       }
       // distant layer: two or three slow fields
       const fields = this.forms.filter((x) => x.kind === 'field' && x.age < x.span);
@@ -576,7 +657,7 @@ void main(){
         g.billowKick += 0.25 + 0.5 * vol;
       }
       // upbeat: a strong bass hit drops new ink near the middle
-      if (f.bassHit > 0.6 && up > 0.5 && mids.length < want + 2 && this.forms.length < MAXF && this.spawnCool < 1) {
+      if (f.bassHit > 0.6 && up > 0.5 && mids.length < 6 && this.forms.length < MAXF && this.spawnCool < 1) {
         this._spawn('bloom');
         this.spawnCool = 1.2;
       }
@@ -621,7 +702,10 @@ void main(){
         g.x += (cx * sp - (g.x - this.focus.x) * pull) * dt;
         g.y += (cy * sp - (g.y - this.focus.y) * pull) * dt;
         // veils lie along the current
-        if (g.kind === 'veil') g.rot += angleTo(Math.atan2(cy, cx) - g.rot) * ease(dt, 6);
+        // remember which way the current carries it (tendrils trail that way)
+        const fa = Math.atan2(cy, cx);
+        g.flowA = g.flowA === undefined ? fa : g.flowA + angleTo(fa - g.flowA) * ease(dt, 3);
+        if (g.kind === 'veil') g.rot += angleTo(fa - g.rot) * ease(dt, 6);
         else g.rot += MB.noise3(g.seed, t * 0.02, 9) * 0.02 * dt;
 
         // BASS: larger forms expand and are gently displaced, with a long release
@@ -650,7 +734,7 @@ void main(){
           g.chordCol = this._chordColour(wv.f, g.pal, this.satMul);
           g.chordAmt = 1;
         }
-        g.chordAmt = (g.chordAmt || 0) * Math.exp(-dt / 8);
+        g.chordAmt = (g.chordAmt || 0) * Math.exp(-dt / (g.role === 'chord' ? 25 : 8));
         if (g.chordCol) target = target.map((v, i) => v + (g.chordCol[i] - v) * 0.7 * g.chordAmt);
         let wsum = 0;
         const mixc = [0, 0, 0];
@@ -754,7 +838,7 @@ void main(){
         B.set([g.rot, warp, g.seed, lum * g.presence * (1 + 0.14 * b) * (1 + 0.18 * release)], i * 4);
         const c = g.col || [0.5, 0.5, 0.5];
         C.set([c[0], c[1], c[2], g.glow * g.presence], i * 4);
-        D.set([g.rip, g.ripAmp, 1, g.billow], i * 4);
+        D.set([g.rip, g.ripAmp, g.flowA || 0, g.billow], i * 4);
         // quiet passages soften: lower falloff and gentler texture
         E.set([g.sil, g.fall * (1 - 0.3 * quiet) * (1 + 0.4 * tension), g.tex * (1 - 0.35 * quiet), g.edge], i * 4);
         // hearts swell with the (smoothed) music; tendrils glow with the
