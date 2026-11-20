@@ -37,13 +37,14 @@
   // Kinds of form. sil: how irregular the silhouette is; fall: how quickly
   // density falls off (higher = denser, more defined); tex: strength of
   // internal texture; edge: how broken the feathered edge is; fold: base
-  // folding; drift: speed on the shared current; grow: seconds to open out.
+  // folding; drift: speed on the shared current; grow: seconds to open out;
+  // heart: how hot its core glows; fil: how strongly filaments stream out.
   const KINDS = {
-    field: { layer: 0, size: [0.6, 1.05], aspect: [0.9, 1.8], span: [90, 180], grow: 14, sil: 0.9, fall: 1.0, tex: 0.12, edge: 0.45, fold: 0.25, drift: 0.3, lum: 1, sat: 0.42 },
-    wash:  { layer: 1, size: [0.3, 0.5],  aspect: [1.2, 2.2], span: [35, 70],  grow: 8,  sil: 1.0, fall: 1.25, tex: 0.5, edge: 0.65, fold: 0.35, drift: 0.55, lum: 0.55, sat: 0.58 },
-    bloom: { layer: 1, size: [0.11, 0.2], aspect: [0.8, 1.35], span: [14, 32], grow: 3.5, sil: 0.85, fall: 2.6, tex: 0.65, edge: 0.75, fold: 0.25, drift: 0.8, lum: 1.0, sat: 0.72 },
-    veil:  { layer: 1, size: [0.17, 0.27], aspect: [2.4, 3.8], span: [20, 45],  grow: 5,  sil: 1.0, fall: 0.95, tex: 0.85, edge: 1.0, fold: 0.85, drift: 1.0, lum: 0.5, sat: 0.66 },
-    wisp:  { layer: 1, size: [0.16, 0.27], aspect: [0.7, 1.4], span: [15, 38],  grow: 4,  sil: 1.1, fall: 1.7, tex: 1.0, edge: 1.0, fold: 1.0, drift: 0.9, lum: 0.85, sat: 0.72 },
+    field: { layer: 0, size: [0.6, 1.05], aspect: [0.9, 1.8], span: [90, 180], grow: 14, sil: 0.9, fall: 1.0, tex: 0.12, edge: 0.45, fold: 0.25, drift: 0.3, lum: 1, sat: 0.42, heart: 0, fil: 0 },
+    wash:  { layer: 1, size: [0.3, 0.5],  aspect: [1.2, 2.2], span: [35, 70],  grow: 8,  sil: 1.0, fall: 1.25, tex: 0.5, edge: 0.65, fold: 0.35, drift: 0.55, lum: 0.55, sat: 0.58, heart: 0.25, fil: 0.3 },
+    bloom: { layer: 1, size: [0.11, 0.2], aspect: [0.8, 1.35], span: [14, 32], grow: 3.5, sil: 0.85, fall: 2.6, tex: 0.65, edge: 0.75, fold: 0.25, drift: 0.8, lum: 1.0, sat: 0.72, heart: 1.0, fil: 0.8 },
+    veil:  { layer: 1, size: [0.17, 0.27], aspect: [2.4, 3.8], span: [20, 45],  grow: 5,  sil: 1.0, fall: 0.95, tex: 0.85, edge: 1.0, fold: 0.85, drift: 1.0, lum: 0.5, sat: 0.66, heart: 0.3, fil: 0.45 },
+    wisp:  { layer: 1, size: [0.16, 0.27], aspect: [0.7, 1.4], span: [15, 38],  grow: 4,  sil: 1.1, fall: 1.7, tex: 1.0, edge: 1.0, fold: 1.0, drift: 0.9, lum: 0.85, sat: 0.72, heart: 0.6, fil: 1.0 },
   };
 
   const VS = `#version 300 es
@@ -60,7 +61,7 @@ float fbm(vec2 p){ float s = 0., a = .5; for (int i = 0; i < 4; i++) { s += a * 
 precision highp float;
 uniform vec2 u_res; uniform float u_time, u_high, u_haze;
 uniform vec3 u_tint; uniform int u_n;
-uniform vec4 fA[${MAXF}], fB[${MAXF}], fC[${MAXF}], fD[${MAXF}], fE[${MAXF}];
+uniform vec4 fA[${MAXF}], fB[${MAXF}], fC[${MAXF}], fD[${MAXF}], fE[${MAXF}], fF[${MAXF}];
 out vec4 o;
 ${NOISE}
 void main(){
@@ -71,10 +72,10 @@ void main(){
   // the air itself: a faint, broad tint of the palette, nearly still and
   // without blotches, so the background stays calm behind the forms
   float h = fbm(ROT * p * .45 + vec2(t * .0015, -t * .001));
-  vec3 col = u_tint * (.55 + .5 * h) * u_haze * .7;
+  vec3 col = u_tint * (.55 + .5 * h) * u_haze * .5;
   for (int i = 0; i < ${MAXF}; i++) {
     if (i >= u_n) break;
-    vec4 A = fA[i], B = fB[i], C = fC[i], D = fD[i], E = fE[i];
+    vec4 A = fA[i], B = fB[i], C = fC[i], D = fD[i], E = fE[i], F = fF[i];
     vec2 d = p - A.xy;
     float cr = cos(B.x), sr = sin(B.x);
     d = mat2(cr, sr, -sr, cr) * d / A.zw;
@@ -101,6 +102,23 @@ void main(){
     vec3 c = C.rgb * B.w * dens;
     // a luminous concentration, kept for strong moments
     c += mix(C.rgb, vec3(1.), .22) * C.a * pow(dens, 2.4) * 1.2;
+    // HEART: a hot, uneven core that leans toward white light
+    vec3 hot = mix(C.rgb, vec3(1., .95, .88), .5);
+    if (F.x > .001) {
+      float rc = r * (1. + .45 * (noise(q * 3.2 + s * 9.) - .5));
+      c += hot * exp(-rc * rc * 10.) * F.x * B.w * 2.6;
+    }
+    // FILAMENTS: wispy streams of light curling out from the heart, slowly
+    // drifting outward like the remains of an exploded star
+    if (F.y > .001) {
+      float ang = r * F.z;
+      vec2 dir = mat2(cos(ang), sin(ang), -sin(ang), cos(ang)) * (q / (r + 1e-3));
+      float fl = fbm(dir * 4.2 + vec2(r * .45 - D.w * .06, s * 3.));
+      fl = smoothstep(.42, .74, fl);
+      float env = smoothstep(.08, .32, r) * exp(-r * .8);
+      float wisp = .45 + .55 * fbm(q * 3.5 + vec2(s, tt));
+      c += hot * fl * fl * env * wisp * F.y * B.w * 3.6;
+    }
     col += c * D.z;
   }
   o = vec4(col, 1.);
@@ -143,7 +161,10 @@ void main(){
       L += vec3(.9, .93, 1.) * S.w * clear * (smoothstep(S.z, S.z * .3, d) + .25 * exp(-d * d / (S.z * S.z * 4.)));
     }
   }
-  vec3 col = u_base + (1. - exp(-L * u_exposure));
+  vec3 tm = 1. - exp(-L * u_exposure);
+  // a gentle S-curve: deeper darks, brighter highlights
+  tm = mix(tm, tm * tm * (3. - 2. * tm), .38);
+  vec3 col = u_base + tm;
   // during a build the edges draw in toward darkness
   float vd = length((uv - .5) * vec2(1.25, 1.)) * 1.5;
   col = mix(col, u_base * .7, u_vig * smoothstep(.3, 1.1, vd));
@@ -356,6 +377,7 @@ void main(){
         presence: 0, grow: 0, billow: 0, billowKick: 0,
         col: opts.col ? opts.col.slice() : null, swell: 0, rip: 0, ripAmp: 0, glow: 0,
         dom: !!opts.dom, split: false, lumMul: opts.lumMul || 1,
+        twist: rnd(-0.8, 0.8), pulse: 0, pulseCool: 0,
       };
       this.forms.push(g);
       return g;
@@ -440,7 +462,7 @@ void main(){
       const t = (this.t += dt);
       // volume with a quick, gentle attack and a slower release
       const lvl = f.silent ? 0 : (f.level ?? f.energy);
-      this.vol += (lvl - this.vol) * ease(dt, lvl > this.vol ? 0.12 : 1.4);
+      this.vol += (lvl - this.vol) * ease(dt, lvl > this.vol ? 0.08 : 1.4);
       const vol = this.vol;
       const bass = f.bass || 0, mid = f.mid ?? 0.3, high = f.high || 0;
       this.eLong += (f.energy - this.eLong) * ease(dt, 20);
@@ -545,13 +567,22 @@ void main(){
         this._spawn('bloom');
         this.spawnCool = 1.2;
       }
+      // BEATS: a strong beat makes one heart flare, never all of them at once
+      if (f.beat && f.beatStrength > 0.3 && !f.silent) {
+        const hearts = this.forms.filter((x) => KINDS[x.kind].heart > 0.2 && x.presence > 0.4 && x.pulseCool <= 0);
+        if (hearts.length) {
+          const g = hearts[Math.floor(Math.random() * hearts.length)];
+          g.pulse = Math.min(1, g.pulse + 0.45 + 0.55 * f.beatStrength);
+          g.pulseCool = (60 / clamp(this.bpm, 50, 190)) * 0.9;
+        }
+      }
       // BASS: a hit sends a soft pressure wave through one larger form
       if (f.bassHit) {
         const big = this.forms.filter((x) => x.size > 0.25 && x.presence > 0.3);
         if (big.length) {
           const g = big[this.rippleNext++ % big.length];
           g.rip = 0;
-          g.ripAmp = 0.025 + 0.06 * f.bassHit;
+          g.ripAmp = 0.04 + 0.09 * f.bassHit;
         }
       }
 
@@ -569,11 +600,13 @@ void main(){
         // MID: internal movement; each layer has its own pace
         const pace = K.layer === 0 ? 0.12 : 1;
         g.billowKick *= Math.exp(-dt / 1.2);
-        g.billow += dt * pace * (0.1 + 0.4 * mid + 0.4 * tension + 1.4 * Math.exp(-g.age / g.growTau) + g.billowKick);
+        g.billow += dt * pace * (0.12 + 0.6 * mid + 0.4 * tension + 1.4 * Math.exp(-g.age / g.growTau) + g.billowKick);
+        g.pulse = (g.pulse || 0) * Math.exp(-dt / 0.35);
+        g.pulseCool = (g.pulseCool || 0) - dt;
 
         // drift on one shared current; distant fields barely move
-        const cx = MB.noise3(g.x * 0.6, g.y * 0.6, t * 0.015) * 0.022;
-        const cy = MB.noise3(g.x * 0.6 + 7.1, g.y * 0.6, t * 0.015) * 0.016;
+        const cx = MB.noise3(g.x * 0.6, g.y * 0.6, t * 0.018) * 0.03;
+        const cy = MB.noise3(g.x * 0.6 + 7.1, g.y * 0.6, t * 0.018) * 0.022;
         const pull = K.layer === 0 || this.idle ? 0 : 0.018 * (1 + 3 * tension);
         const sp = K.drift * (0.5 + mid * 0.8);
         g.x += (cx * sp - (g.x - this.focus.x) * pull) * dt;
@@ -671,6 +704,7 @@ void main(){
       const lush = (f.lush || 0) * (0.35 + 0.65 * (this.drive ?? 0.5)), vol = this.vol, mid = f.mid ?? 0.3, high = f.high || 0;
       const A = new Float32Array(MAXF * 4), B = new Float32Array(MAXF * 4);
       const C = new Float32Array(MAXF * 4), D = new Float32Array(MAXF * 4), E = new Float32Array(MAXF * 4);
+      const Fh = new Float32Array(MAXF * 4);
       // distant layer first, then the midground
       const list = this.forms.slice().sort((a, b) => KINDS[a.kind].layer - KINDS[b.kind].layer).slice(0, MAXF);
       // the more forms there are, the less each adds, so overlaps stay luminous
@@ -711,6 +745,12 @@ void main(){
         D.set([g.rip, g.ripAmp, 1, g.billow], i * 4);
         // quiet passages soften: lower falloff and gentler texture
         E.set([g.sil, g.fall * (1 - 0.3 * quiet) * (1 + 0.4 * tension), g.tex * (1 - 0.35 * quiet), g.edge], i * 4);
+        // hearts glow with volume and flare on beats; filaments stream with the
+        // midrange; both stay gentler for soft songs
+        const gentle = this.idle ? 0.8 : 0.4 + 0.6 * intensity;
+        const heart = K.heart ? (K.heart * (0.35 + 0.65 * vol) * gentle + 0.9 * (g.pulse || 0)) * g.presence : 0;
+        const fil = K.fil ? (K.fil * (0.35 + 0.65 * mid) * gentle + 0.4 * (g.pulse || 0)) * g.presence : 0;
+        Fh.set([heart, fil, g.twist || 0, 0], i * 4);
       });
 
       gl.bindVertexArray(null);
@@ -735,6 +775,7 @@ void main(){
       gl.uniform4fv(P.u.fC, C);
       gl.uniform4fv(P.u.fD, D);
       gl.uniform4fv(P.u.fE, E);
+      gl.uniform4fv(P.u.fF, Fh);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
       // 2. trace: traces of earlier moments linger and diffuse
@@ -763,10 +804,10 @@ void main(){
       gl.uniform1i(P.u.u_trace, 1);
       gl.uniform2f(P.u.u_res, this.c.width, this.c.height);
       gl.uniform1f(P.u.u_time, this.t);
-      gl.uniform1f(P.u.u_exposure, 1.1 + 0.3 * (this.intensity ?? 0.5) + 0.15 * (this.up || 0) + 0.15 * (this.release || 0));
+      gl.uniform1f(P.u.u_exposure, 1.22 + 0.38 * (this.intensity ?? 0.5) + 0.15 * (this.up || 0) + 0.15 * (this.release || 0));
       gl.uniform1f(P.u.u_vig, clamp(0.12 + 0.6 * (this.tension || 0) - 0.12 * (this.release || 0), 0, 0.8));
       gl.uniform1f(P.u.u_traceMix, 0.5);
-      const base = [0.055, 0.055, 0.062].map((v, i) => v + this.tint[i] * 0.03);
+      const base = [0.034, 0.034, 0.042].map((v, i) => v + this.tint[i] * 0.03);
       gl.uniform3fv(P.u.u_base, base);
       const pts = new Float32Array(MAXP * 4);
       let np = 0;
