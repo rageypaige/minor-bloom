@@ -32,33 +32,35 @@ phone with **audio file**.
 
 ## What you'll see
 
-- **Soft forms of light:** broad washes, dense blooms, long veils and folded
-  wisps, in front of distant colour fields that barely move. They open out
-  like ink in water and drift on one slow current, and traces of earlier
-  moments linger and diffuse.
-- **A faint night sky** far behind: sparse stars that twinkle slowly, hide
-  behind bright fog, show more in quiet passages and glint now and then with a
-  cymbal or a bright high note.
-- **The song's shape:** as it builds, the edges darken and the light gathers
-  and tightens; when the chorus or drop arrives it breaks open in a luminous
-  bloom with fuller colour, then settles. The whole scene slowly breathes once
-  per musical phrase.
-- **Gentle songs stay gentle:** soft, slow or undriven music (like solo piano)
-  gets smaller, dimmer forms and lots of darkness; full, driving music gets
-  larger, brighter, layered light.
+- **One form of light** that lives for the whole song, with a soft aura
+  around it, in a deep charcoal fog with fine film grain. The music shapes
+  its **size** (volume and fullness), its **shape** (it stretches, turns and
+  folds with the midrange), how far its light **spreads** (the aura widens as
+  the arrangement fills out) and its **colour** (the key, and each chord
+  washing through).
+- **Tendrils** that grow out of it while the music sustains and swells, and
+  draw back when it quiets.
+- **A faint night sky** behind: sparse stars that twinkle, hide behind bright
+  fog, and glint now and then with a cymbal or a bright high note.
+- **The song's shape:** as it builds, the light draws in and the edges
+  darken; when it arrives, it opens back up with deeper colour. The whole
+  scene slowly breathes once per musical phrase.
+- **Gentle songs stay gentle:** soft or undriven music (like solo piano) keeps
+  the form smaller and softer; full, driving music makes it larger and
+  brighter.
 
 ## What it listens for
 
 | In the music | In the sky |
 | --- | --- |
-| Major vs minor (the key and each chord) | Warm golds, peaches and roses ↔ cool violets and blues, muted, blended gradually; each chord change sends a wave of its colour through the fog |
-| Volume | How full, large and luminous the forms are |
-| Bass | Larger forms swell and are gently pushed; soft pressure waves |
-| Midrange | Movement and folding inside the forms |
+| Major vs minor (the key and each chord) | Warm golds, peaches and roses ↔ cool violets and blues, muted, blended gradually; each chord change washes its colour through |
+| Volume | How large and luminous the form is |
+| Bass | Gentle swelling and soft pressure ripples |
+| Midrange | Its shape: stretching, turning and folding |
 | High frequencies | Fleeting fine points of light and shimmer; stars glint |
 | Tempo | The cadence of gestures and the length of each breath |
-| How full and driven it is | How many forms, how bright, and how often new light blooms |
-| Builds and arrivals | Tension (gathering, darker edges) and release (a large bloom) |
+| How full and driven it is | How big and bright it gets, and how far its aura spreads |
+| Builds and arrivals | The light draws in, then opens back up |
 
 Key and tempo detection are estimates. They are usually close, but can mix up
 relative keys (for example C major and A minor). Tempo is read over about 12

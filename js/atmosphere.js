@@ -7,22 +7,23 @@
 //   3. output - scene + trace, gently tone-mapped, crisp points, film grain
 //
 // Musical roles (all from the existing analysis):
-//   volume  -> fullness, scale and luminosity of the forms
-//   bass    -> gently displaces and expands the larger forms
-//   mid     -> internal folds and flowing movement
-//   high    -> fleeting fine detail: points, shimmer, small lights
-//   tempo   -> the cadence of gestures
-//   density -> how many layers there are and how complex the space is
-//   peaks   -> occasionally one broad form dominates, then dissolves
-//   harmony -> colour, through the existing major/minor palettes; each
-//              chord change washes its own colour outward through the forms
-//   builds  -> the scene draws in (darker edges, gathered, tighter light);
-//              an arrival breaks it open in a large luminous bloom
+// While listening the sky is deliberately simple: one main form that lives
+// for the whole song, with a soft aura of light around it. The music shapes
+// its size, shape, spread and colour:
+//   volume  -> size and luminosity
+//   fullness-> size, and how far the aura spreads
+//   mid     -> stretching, internal folds and flowing movement
+//   bass    -> gentle swelling and soft pressure ripples
+//   high    -> fleeting fine points and shimmer
+//   harmony -> colour, through the major/minor palettes; each chord change
+//              washes its own colour through
+//   builds  -> the light draws in (darker edges, tighter); an arrival opens
+//              it back up with deeper colour
 //   phrases -> the whole scene slowly breathes over each phrase (16 beats)
+// Its tendrils grow while the music sustains and swells.
 //
-// Depth comes from layers with different speeds and lifespans:
-//   distant  - broad, barely visible colour fields, very slow
-//   midground - washes, blooms, veils and wisps with flowing texture
+// Behind it: broad, barely visible colour fields that move very slowly.
+// (The start screen shows a few soft blooms drifting around the title.)
 // Far behind it all is a faint night sky: sparse stars that twinkle slowly,
 // hide behind bright fog, show more in quiet passages, and now and then
 // glint with a cymbal or a bright high note.
@@ -310,7 +311,6 @@ void main(){
       if (!this.stars) this._makeStars();
       this.forms = [];
       this.points = [];
-      this.domCool = rnd(40, 70);
       for (const tr of this.traces) {
         this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, tr.fb);
         this.gl.clear(this.gl.COLOR_BUFFER_BIT);
@@ -384,9 +384,9 @@ void main(){
         sil: K.sil * rnd(0.75, 1.25), fall: K.fall * rnd(0.8, 1.2), tex: K.tex * rnd(0.8, 1.1), edge: K.edge,
         presence: 0, grow: 0, billow: 0, billowKick: 0,
         col: opts.col ? opts.col.slice() : null, swell: 0, rip: 0, ripAmp: 0, glow: 0,
-        dom: !!opts.dom, split: false, lumMul: opts.lumMul || 1,
+        lumMul: opts.lumMul || 1,
         twist: rnd(-0.8, 0.8), reach: 0,
-        role: opts.role || null, // 'chord', 'bass' or 'voice' when tied to a part of the music
+        role: opts.role || null, // 'main' or 'aura' while listening
       };
       this.forms.push(g);
       return g;
@@ -402,71 +402,13 @@ void main(){
       return hslToRgb(c.h, c.s * 0.92 * satMul, l);
     }
 
-    // A new chord is born as a bloom in its own colour, a step around the
-    // focus from the previous one, so a progression becomes a little
-    // constellation; when it repeats, new blooms replace the oldest.
-    _chordBloom(f) {
-      this.chordAng = (this.chordAng ?? rnd(0, Math.PI * 2)) + rnd(0.9, 1.4);
-      const rad = 0.15 + 0.08 * Math.random() + 0.06 * (this.up || 0);
-      const x = clamp(this.focus.x + Math.cos(this.chordAng) * rad * 1.3, -0.55 * this.asp, 0.55 * this.asp);
-      const y = clamp(this.focus.y + Math.sin(this.chordAng) * rad, -0.48, 0.48);
-      const pal = Math.floor(rnd(0, 6));
-      const col = this._chordColour(f, pal, this.satMul || 1);
-      const kind = (this.up || 0) > 0.45 || Math.random() < 0.55 ? 'bloom' : Math.random() < 0.6 ? 'wisp' : 'veil';
-      const gap = this.chordGap ?? 3;
-      // each chord should visibly land, even in a soft verse
-      const lumMul = 1.5 + 0.6 * clamp(1 - (this.intensity ?? 0.5) * 1.6);
-      const g = this._spawn(kind, { at: { x, y }, pal, col, span: clamp(gap * 4, 9, 24), grow: 1.6 + gap * 0.2, role: 'chord', lumMul });
-      g.chordCol = col.slice();
-      g.chordAmt = 1;
-      // keep the constellation small: the oldest chords dissolve first
-      const chords = this.forms.filter((h) => h.role === 'chord' && h.age < h.span - 6).sort((a, b) => b.age - a.age);
-      // (fewer in quiet passages, so a soft verse isn't scattered with faint lights)
-      const keep = 3 + Math.round(2 * clamp(((this.intensity ?? 0.5) - 0.3) * 3));
-      for (const old of chords.slice(keep)) old.span = Math.min(old.span, old.age + 6);
-    }
-
-    // An arrival after a build: the scene breaks open.
+    // An arrival after a build: the main form opens up and colour deepens.
     _release(f) {
       this.release = 1;
       this.tension = 0;
       this.relCool = 16;
-      const fp = { x: this.focus.x, y: this.focus.y };
-      if (this.forms.length >= MAXF) {
-        const old = this.forms.filter((g) => !g.dom && KINDS[g.kind].layer === 1).sort((a, b) => b.age - a.age)[0];
-        if (old) old.span = old.age; // make room
-        this.forms = this.forms.filter((g) => g.age < g.span);
-      }
-      const k = 0.6 + 0.4 * (this.intensity ?? 0.5); // gentler songs get a gentler release
-      this._spawn('bloom', { at: fp, size: rnd(0.45, 0.6) * k, span: rnd(16, 24), grow: 1.6, dom: true, lumMul: 1.0 * k });
       for (const g of this.forms) g.billowKick += 1.2;
       this.phase = Math.PI; // breathe out from here
-      this.domCool = Math.max(this.domCool, 25);
-    }
-
-    // A dominant form: one broad, bright gesture for a musical peak. When it
-    // begins to fade it breaks up into smaller overlapping forms.
-    _dominant(f) {
-      const fp = this._focusPoint();
-      this._spawn('bloom', {
-        at: { x: fp.x * 0.6, y: fp.y * 0.6 }, size: rnd(0.42, 0.6), span: rnd(18, 28), grow: 5,
-        dom: true, lumMul: 1.35,
-      });
-      this.domCool = rnd(30, 55);
-    }
-
-    _dissolve(g) {
-      g.split = true;
-      const n = 3 + Math.floor(Math.random() * 2);
-      for (let k = 0; k < n && this.forms.length < MAXF; k++) {
-        const kind = ['wisp', 'bloom', 'veil'][k % 3];
-        const r = g.size * (0.35 + 0.5 * Math.random());
-        const a = rnd(0, Math.PI * 2);
-        this._spawn(kind, {
-          at: { x: g.x + Math.cos(a) * r, y: g.y + Math.sin(a) * r },
-          pal: g.pal + k, col: g.col, grow: 3, span: rnd(14, 26),
-        });
-      }
     }
 
     _colour(form, f, satMul = 1) {
@@ -477,8 +419,7 @@ void main(){
       // distant layer is greyer and dimmer, like colour seen through haze
       let l = clamp(c.l * 0.75 + 16, 30, 66) - (K.layer === 0 ? 6 : 0);
       let sat = c.s * K.sat;
-      if (form.role === 'bass') { l -= 7; sat *= 0.9; }       // the bass: deeper
-      if (form.role === 'voice') { l += 9; sat *= 0.75; }     // the voice: paler, more luminous
+      if (form.role === 'aura') { l -= 4; sat *= 0.85; }      // the aura: softer, deeper
       return hslToRgb(c.h, sat, clamp(l, 18, 80));
     }
 
@@ -577,78 +518,51 @@ void main(){
       this.up = (this.up ?? 0) + (upRaw - (this.up ?? 0)) * ease(dt, upRaw > (this.up ?? 0) ? 1.5 : 5);
       const up = this.up;
 
-      // WHAT ARRIVES AND LEAVES follows the music itself:
-      //   chords - each new chord is born as a bloom in its colour
-      //   bass   - a broad, deep glow while the bass is playing
-      //   voice  - a pale light while someone sings, higher for higher notes
-      // A gentle fallback keeps the sky alive when the music holds still.
+      // WHILE LISTENING the sky is deliberately simple: one main form that lives
+      // for the whole song, with a soft aura of light around it, over the
+      // distant fields and the stars. The music shapes it continuously:
+      //   size   - volume and fullness
+      //   shape  - it stretches and folds with the midrange; tendrils grow
+      //   spread - the aura widens as the arrangement fills out
+      //   colour - the key, and each chord washing through
       const mids = this.forms.filter((x) => KINDS[x.kind].layer === 1 && x.age < x.span);
-      const asp = this.asp;
-      this.sinceChord = (this.sinceChord ?? 99) + dt;
-      if (!this.idle && f.chordId && f.chordId !== this.lastChordBloom && !f.silent && (this.heardT || 0) > 2 && this.forms.length < MAXF) {
-        this.lastChordBloom = f.chordId;
-        this.chordGap = (this.chordGap ?? 3) + (clamp(this.sinceChord, 0.8, 8) - (this.chordGap ?? 3)) * 0.3;
-        this.sinceChord = 0;
-        this._chordBloom(f);
-      }
-
-      // the bass: enters when it's been playing for a moment, leaves when it stops
-      this.bassS = (this.bassS ?? 0) + (bass - (this.bassS ?? 0)) * ease(dt, 1);
-      this.bassOnT = this.bassS > 0.35 ? (this.bassOnT || 0) + dt : 0;
-      this.bassOffT = this.bassS < 0.15 ? (this.bassOffT || 0) + dt : 0;
-      let bf = this.forms.find((g) => g.role === 'bass' && g.age < g.span - 7);
       if (!this.idle) {
-        if (!bf && this.bassOnT > 1.2 && this.forms.length < MAXF) {
-          bf = this._spawn('wash', { at: { x: this.focus.x + rnd(-0.2, 0.2) * asp, y: -0.32 + rnd(-0.05, 0.05) }, size: rnd(0.32, 0.4), grow: 3, span: 99999, role: 'bass', lumMul: 0.75 });
+        let main = this.forms.find((g) => g.role === 'main');
+        if (!main) {
+          // the start screen's blooms make way
+          for (const g of mids) g.span = Math.min(g.span, g.age + 4);
+          main = this._spawn('bloom', { at: { x: this.focus.x, y: this.focus.y }, size: 0.18, grow: 4, span: 1e9, role: 'main', pal: 0, lumMul: 1.35 });
+          this._spawn('wash', { at: { x: main.x, y: main.y }, size: 0.4, grow: 8, span: 1e9, role: 'aura', pal: 1, lumMul: 0.4 });
         }
-        if (bf && this.bassOffT > 3) bf.span = bf.age + 7;
-      }
-
-      // the voice: a pale light while someone sings; it drifts higher for
-      // higher phrases and glows with the phrase (not with each word)
-      const mel = f.melody || {};
-      this.singT = mel.on ? 0 : (this.singT ?? 99) + dt;
-      if (mel.on) this.pitchS = (this.pitchS ?? mel.pitch) + (mel.pitch - (this.pitchS ?? mel.pitch)) * ease(dt, 2.5);
-      const vt = mel.on ? 0.5 + 0.5 * clamp((mel.loud || 0) * 1.5) : 0;
-      this.voiceLvl = (this.voiceLvl ?? 0) + (vt - (this.voiceLvl ?? 0)) * ease(dt, vt > (this.voiceLvl ?? 0) ? 0.8 : 2.5);
-      let vf = this.forms.find((g) => g.role === 'voice' && g.age < g.span - 6);
-      if (!this.idle) {
-        if (!vf && mel.on && this.forms.length < MAXF) {
-          vf = this._spawn('bloom', { at: { x: this.focus.x + rnd(-0.12, 0.12) * asp, y: this.focus.y + 0.1 }, size: 0.17, grow: 2.5, span: 99999, role: 'voice' });
+        const v = this.volR ?? vol, m = this.midS ?? mid;
+        // SIZE: grows with volume and fullness, and settles, never jumps
+        const sizeT = 0.14 + 0.16 * v + 0.12 * lush + 0.05 * (this.release || 0);
+        main.size += (sizeT - main.size) * ease(dt, 2);
+        // SHAPE: stretches with the midrange, sometimes long and low, sometimes
+        // tall, its long axis slowly turning
+        const aspT = clamp(1 + 0.35 * m + 0.8 * m * Math.sin(t * 0.06 + 1.3), 0.55, 2.4);
+        main.aspect += (aspT - main.aspect) * ease(dt, 3);
+        // SPREAD: the aura widens as the arrangement fills out
+        const aura = this.forms.find((g) => g.role === 'aura');
+        if (aura) {
+          // (capped, so even a big chorus leaves night sky around it)
+          const spreadT = Math.min(0.8, main.size * (1.4 + 1.3 * lush + 0.4 * v));
+          aura.size += (spreadT - aura.size) * ease(dt, 3);
+          aura.x += (main.x - aura.x) * ease(dt, 2);
+          aura.y += (main.y - aura.y) * ease(dt, 2);
+          aura.lumMul = 0.2 + 0.22 * lush;
         }
-        if (vf && this.singT > 6) vf.span = vf.age + 6;
-        if (vf) {
-          const ty = clamp(this.focus.y + ((this.pitchS ?? 0.5) - 0.5) * 0.55, -0.4, 0.4);
-          vf.y += (ty - vf.y) * ease(dt, 3);
-          vf.lumMul = 0.5 + 0.8 * this.voiceLvl;
-        }
-      }
-
-      // fallback: the start screen, or long stretches without a chord change
-      const want = this.idle ? 4 : 3;
-      this.spawnCool -= dt;
-      const still = this.idle || (this.sinceChord > 7 && !f.silent);
-      if (still && mids.length < want && this.spawnCool <= 0 && this.forms.length < MAXF) {
-        this._spawn(this._pickKind(f));
-        this.spawnCool = this.idle ? rnd(0.6, 1.4) : rnd(3, 6);
-      }
-      // never too crowded: the oldest general forms give way first
-      if (mids.length > 8) {
-        const free = mids.filter((x) => !x.dom && !x.role);
-        const pool = free.length ? free : mids.filter((x) => x.role === 'chord');
-        if (pool.length) {
-          const oldest = pool.reduce((a, b) => (a.age / a.span > b.age / b.span ? a : b));
-          oldest.span = Math.min(oldest.span, oldest.age + 6);
+      } else {
+        // the start screen: a few soft blooms drifting around the title
+        this.spawnCool -= dt;
+        if (mids.length < 4 && this.spawnCool <= 0 && this.forms.length < MAXF) {
+          this._spawn(this._pickKind(f));
+          this.spawnCool = rnd(0.6, 1.4);
         }
       }
       // distant layer: two or three slow fields
       const fields = this.forms.filter((x) => x.kind === 'field' && x.age < x.span);
       if (fields.length < 2 + (lush > 0.55 ? 1 : 0) && this.forms.length < MAXF) this._spawn('field');
-
-      // PEAKS: now and then a single broad form takes over
-      this.domCool -= dt;
-      const hasDom = this.forms.some((x) => x.dom && x.age < x.span);
-      if (!hasDom && this.domCool <= 0 && !f.silent && (peak > 0.45 || (this.domCool < -60 && vol > 0.4))) this._dominant(f);
 
       // TEMPO: on a slow beat clock, one form at a time billows a little
       const beat = 60 / clamp(this.bpm, 50, 190);
@@ -657,11 +571,6 @@ void main(){
         this.clock = beat * (up < 0.3 ? 4 : up < 0.6 ? 2 : 1) * rnd(0.9, 1.1);
         const g = this.forms[Math.floor(Math.random() * this.forms.length)];
         g.billowKick += 0.25 + 0.5 * vol;
-      }
-      // upbeat: a strong bass hit drops new ink near the middle
-      if (f.bassHit > 0.6 && up > 0.5 && mids.length < 6 && this.forms.length < MAXF && this.spawnCool < 1) {
-        this._spawn('bloom');
-        this.spawnCool = 1.2;
       }
       // BASS: a hit sends a soft pressure wave through one larger form
       if (f.bassHit) {
@@ -673,14 +582,12 @@ void main(){
         }
       }
 
-      const dominant = this.forms.find((x) => x.dom && x.age < x.span);
       for (const g of this.forms) {
         const K = KINDS[g.kind];
         g.age += dt;
         const fadeIn = clamp(g.age / (K.layer === 0 ? 12 : 4 + g.growTau));
         const fadeOut = clamp((g.span - g.age) / (K.layer === 0 ? 16 : 8));
         g.presence = Math.min(fadeIn, fadeOut);
-        if (g.dom && !g.split && g.span - g.age < 9) this._dissolve(g);
 
         // growth: opens out, then keeps spreading slowly as it thins
         g.grow = (1 - Math.exp(-g.age / g.growTau)) * (1 + g.age * 0.005);
@@ -718,14 +625,10 @@ void main(){
         g.rip += dt * 4;
         g.ripAmp *= Math.exp(-dt / 1.2);
 
-        // brightness: kept for peaks, and for the dominant form
+        // brightness: a little extra glow is kept for musical peaks
         const near = Math.exp(-Math.hypot(g.x - this.focus.x, g.y - this.focus.y) * 2);
-        let glowT = K.layer === 1 ? Math.max(peak, up * 0.3) * near * (0.4 + 0.6 * intensity) : 0;
-        if (g.dom) glowT = Math.max(glowT, 0.55 + 0.45 * peak);
+        const glowT = K.layer === 1 ? Math.max(peak, up * 0.3) * near * (0.4 + 0.6 * intensity) : 0;
         g.glow += (glowT - g.glow) * ease(dt, glowT > g.glow ? 0.3 : 3);
-        // while one form dominates, the others step back
-        const back = dominant && dominant !== g && K.layer === 1 ? 1 - 0.4 * dominant.presence : 1;
-        g.dim = (g.dim ?? 1) + (back - (g.dim ?? 1)) * ease(dt, 2);
 
         // colour: the palette, muted, mingling with nearby forms
         let target = this._colour(g, f, this.satMul);
@@ -736,7 +639,7 @@ void main(){
           g.chordCol = this._chordColour(wv.f, g.pal, this.satMul);
           g.chordAmt = 1;
         }
-        g.chordAmt = (g.chordAmt || 0) * Math.exp(-dt / (g.role === 'chord' ? 25 : 8));
+        g.chordAmt = (g.chordAmt || 0) * Math.exp(-dt / 8);
         if (g.chordCol) target = target.map((v, i) => v + (g.chordCol[i] - v) * 0.7 * g.chordAmt);
         let wsum = 0;
         const mixc = [0, 0, 0];
@@ -830,7 +733,7 @@ void main(){
         const fresh = 0.75 + 0.5 * Math.exp(-g.age / (g.growTau * 3));
         let lum = far
           ? (0.016 + 0.026 * vol + 0.016 * lush) * lightK
-          : K.lum * g.lumMul * (0.07 + 0.42 * vol + 0.2 * up) * fresh * share * (g.dim ?? 1) * lightK;
+          : K.lum * g.lumMul * (0.07 + 0.42 * vol + 0.2 * up) * fresh * share * lightK;
         // SMALLER, NOT DIMMER: a midground form that would be faint shrinks
         // and keeps enough light to read as a soft glow, instead of a wide,
         // faint smudge. Its total light stays about the same.
@@ -841,6 +744,8 @@ void main(){
         const faint = far ? 0 : clamp(1 - lum / L0) * gentleGate;
         const shrink = 1 - 0.48 * faint;
         if (!far) lum = Math.min(Math.max(lum, L0 * 0.8), lum / (shrink * shrink));
+        // the main form is the focus: even in a hushed verse it reads as a glow
+        if (g.role === 'main') lum = Math.max(lum, 0.17);
         let scale = g.size * (far ? 1 : sizeK) * (0.15 + 0.85 * Math.min(g.grow, 1.4)) * (0.78 + 0.45 * vol) * (1 + 0.28 * g.swell)
           * (1 - 0.18 * tension + 0.15 * release) * (1 + 0.06 * b) * shrink;
         const stretch = g.aspect * (1 + mid * 0.3 * Math.sin(g.seed + this.t * 0.07));
