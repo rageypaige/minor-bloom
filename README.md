@@ -57,6 +57,20 @@ phone with **audio file**.
   fullness how many waves there are and how far they spread; the midrange how
   they curve and fold; bass a slow swell rolling through; highs a dust of
   particles drifting off; harmony their colour.
+  **Mood shapes the composition**, not just its colour. The analysis is read
+  as a continuous blend of four moods (an artistic interpretation, not a
+  measurement), each with its own structure:
+  - *warm* (major, medium intensity): expansive, loosely flowing ribbons,
+    gentle curves, soft transitions, copper and champagne.
+  - *tender* (major, calm): sparse, very fine filaments, delicate movement,
+    lots of space, lavender and pearl.
+  - *stormy* (minor, intense): intersecting currents, layered turbulence,
+    unstable direction, deep indigo with occasional luminous accents.
+  - *restless* (intense and busy, with fast chord changes): tight loops,
+    irregular turns, overlapping textures, sharper rhythmic accents.
+  Moods glide into each other rather than switching. Half of the blend is
+  the song's running average, and the key seeds the shape of the wave field,
+  so each song settles into a recognisable landscape of its own.
 - **Night sky**, at
   [paigelatimer.ca/minor-bloom/?style=sky](https://paigelatimer.ca/minor-bloom/?style=sky):
   one soft form of light with growing tendrils, described below.
