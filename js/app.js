@@ -259,6 +259,9 @@
   }
 
   function frame(now) {
+    // The start screen's slow drift is drawn at ~30 fps to spare the
+    // computer while it waits; listening runs at the full frame rate.
+    if (state === 'intro' && now - last < 30) { requestAnimationFrame(frame); return; }
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
 

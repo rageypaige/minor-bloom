@@ -310,7 +310,6 @@ void main(){
   const OUT = `#version 300 es
 precision highp float;
 uniform sampler2D u_light, u_glow; uniform vec2 u_res, u_gpx; uniform float u_time, u_exposure, u_lumin, u_glowAmt; uniform vec3 u_base;
-uniform vec4 u_stars[${MAXS}]; uniform int u_ns;
 out vec4 o;
 float hash(vec2 p){ uvec2 q = uvec2(ivec2(floor(p))) * uvec2(1597334673U, 3812015801U); uint n = (q.x ^ q.y) * 1597334673U; return float(n) * (1. / 4294967295.); }
 void main(){
@@ -328,18 +327,7 @@ void main(){
   }
   G += texture(u_glow, uv).rgb * 2.;
   L += G / 14. * u_glowAmt;
-  // stars, hidden where the waves are bright
-  float fog = dot(L, vec3(.3, .59, .11));
-  float clear = 1. - smoothstep(.05, .45, fog);
-  if (clear > .01) {
-    for (int i = 0; i < ${MAXS}; i++) {
-      if (i >= u_ns) break;
-      vec4 S = u_stars[i];
-      float d = length(gl_FragCoord.xy - S.xy);
-      if (d > S.z * 3.) continue;
-      L += vec3(.9, .93, 1.) * S.w * clear * (smoothstep(S.z, S.z * .3, d) + .25 * exp(-d * d / (S.z * S.z * 4.)));
-    }
-  }
+  // (stars are drawn afterwards as small points; see STAR_VS/STAR_FS)
   vec3 tm = 1. - exp(-L * u_exposure);
   // where light piles up on a crest it warms toward soft white
   float crest = smoothstep(.45, 1., dot(tm, vec3(.3, .59, .11)));
@@ -350,6 +338,31 @@ void main(){
   float lum = dot(col, vec3(.3, .59, .11));
   col += g * (.022 + .09 * lum);
   o = vec4(col, 1.);
+}`;
+
+  // 4. Stars, drawn once each as a small point (much cheaper than checking
+  // every star at every pixel), hidden where the light behind them is bright.
+  const STAR_VS = `#version 300 es
+precision highp float;
+uniform vec4 u_stars[${MAXS}]; uniform vec2 u_res;
+out vec4 v_star;
+void main(){
+  vec4 S = u_stars[gl_VertexID];
+  v_star = S;
+  gl_Position = vec4(S.xy / u_res * 2. - 1., 0., 1.);
+  gl_PointSize = S.z * 6. + 1.;
+}`;
+  const STAR_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_light; uniform vec2 u_res; uniform float u_exposure;
+in vec4 v_star;
+out vec4 o;
+void main(){
+  float d = length(gl_FragCoord.xy - (v_star.xy));
+  float z = v_star.z;
+  float clear = 1. - smoothstep(.05, .45, dot(texture(u_light, gl_FragCoord.xy / u_res).rgb, vec3(.3, .59, .11)));
+  float s = v_star.w * clear * (smoothstep(z, z * .3, d) + .25 * exp(-d * d / (z * z * 4.)));
+  o = vec4(vec3(.9, .93, 1.) * (1. - exp(-s * u_exposure)), 1.);
 }`;
 
   // Tuning for the soft guidance (?style=ribbons). Distances are in screen
@@ -421,6 +434,7 @@ void main(){
       this.pPts = this._prog(PTS_VS, PTS_FS);
       this.pOut = this._prog(QUAD_VS, OUT);
       this.pGlow = this._prog(QUAD_VS, GLOW);
+      this.pStar = this._prog(STAR_VS, STAR_FS);
       this.quad = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -982,9 +996,25 @@ void main(){
         sa.set([st.x * this.c.width, st.y * this.c.height, st.size * this.dpr * (0.85 + 0.3 * tw + 0.3 * st.glint), b], ns * 4);
         ns++;
       }
-      gl.uniform4fv(P.u.u_stars, sa);
-      gl.uniform1i(P.u.u_ns, ns);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      // 4. stars on top, one small point each, faded behind bright light
+      if (ns) {
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE);
+        gl.bindVertexArray(this.vao);
+        const PS = this.pStar;
+        gl.useProgram(PS.p);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, lOut.tex);
+        gl.uniform1i(PS.u.u_light, 0);
+        gl.uniform2f(PS.u.u_res, this.c.width, this.c.height);
+        gl.uniform1f(PS.u.u_exposure, 0.95 + 0.75 * lum2);
+        gl.uniform4fv(PS.u.u_stars, sa);
+        gl.drawArrays(gl.POINTS, 0, ns);
+        gl.disable(gl.BLEND);
+        gl.bindVertexArray(null);
+      }
     }
 
     // A still of the current moment, for saving.
