@@ -44,7 +44,7 @@ precision highp float;
 uniform sampler2D u_state;
 uniform float u_time, u_dt, u_asp;
 uniform float u_freq, u_warp, u_levels, u_pull, u_flow, u_dust, u_spread, u_bassAmp, u_bassPhase;
-uniform vec2 u_center; uniform float u_ang;
+uniform vec2 u_center; uniform float u_ang, u_thick;
 out vec4 o;
 ${NOISE}
 // Long wave lines that run across the screen (not closed loops): the field
@@ -69,7 +69,9 @@ void main(){
   vec2 g = vec2(field(p + vec2(e, 0.)) - n, field(p + vec2(0., e)) - n) / e;
   float g2 = dot(g, g) + 1e-3;
   // pulled onto the nearest wave line (a contour of the field)...
-  float d = fract(n * u_levels + (h1(seed * 4.3) - .5) * .12) - .5;
+  // each particle sits a little off its line; louder music makes the band
+  // of particles around each wave wider, so the waves get thicker
+  float d = fract(n * u_levels + (h1(seed * 4.3) - .5) * u_thick) - .5;
   vec2 toLine = (-d / u_levels) * g / g2;
   // ...and streaming along it
   vec2 along = vec2(-g.y, g.x) / sqrt(g2);
@@ -368,9 +370,10 @@ void main(){
       gl.uniform1f(P.u.u_time, this.t);
       gl.uniform1f(P.u.u_dt, dt);
       gl.uniform1f(P.u.u_asp, this.asp);
-      gl.uniform1f(P.u.u_freq, 1.1 + 0.6 * mid);                 // MID: the size of the curves
-      gl.uniform1f(P.u.u_warp, 0.6 + 0.75 * mid);                 // MID: how deeply they fold
-      gl.uniform1f(P.u.u_levels, 2.2 + 2.6 * lush);              // FULLNESS: how many wave lines
+      gl.uniform1f(P.u.u_freq, 1.0 + 0.25 * mid);                 // MID: the size of the curves
+      gl.uniform1f(P.u.u_warp, 0.55 + 0.4 * mid);                 // MID: how deeply they fold
+      gl.uniform1f(P.u.u_levels, 1.5 + 1.1 * lush);              // FULLNESS: a few more wave lines
+      gl.uniform1f(P.u.u_thick, 0.08 + 0.42 * vol);              // VOLUME: thicker waves
       gl.uniform1f(P.u.u_pull, 3.5 + 2 * (1 - high));            // tighter lines when it's clean
       gl.uniform1f(P.u.u_flow, (0.03 + 0.11 * vol + 0.03 * mid) * tempo); // VOLUME: speed
       gl.uniform1f(P.u.u_dust, 0.12 + 0.3 * high);               // HIGHS: dust drifting off
