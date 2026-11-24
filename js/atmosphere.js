@@ -421,7 +421,9 @@ void main(){
       g.chordAmt = 1;
       // keep the constellation small: the oldest chords dissolve first
       const chords = this.forms.filter((h) => h.role === 'chord' && h.age < h.span - 6).sort((a, b) => b.age - a.age);
-      for (const old of chords.slice(5)) old.span = Math.min(old.span, old.age + 6);
+      // (fewer in quiet passages, so a soft verse isn't scattered with faint lights)
+      const keep = 3 + Math.round(2 * clamp(((this.intensity ?? 0.5) - 0.3) * 3));
+      for (const old of chords.slice(keep)) old.span = Math.min(old.span, old.age + 6);
     }
 
     // An arrival after a build: the scene breaks open.
@@ -868,8 +870,23 @@ void main(){
         const far = K.layer === 0;
         // VOLUME: fullness, scale and luminosity; BASS: expansion
         const b = far ? brFar : br;
-        const scale = g.size * (far ? 1 : sizeK) * (0.15 + 0.85 * Math.min(g.grow, 1.4)) * (0.78 + 0.45 * vol) * (1 + 0.28 * g.swell)
-          * (1 - 0.18 * tension + 0.15 * release) * (1 + 0.06 * b);
+        // a fresh drop is densest; it thins as it spreads
+        const fresh = 0.75 + 0.5 * Math.exp(-g.age / (g.growTau * 3));
+        let lum = far
+          ? (0.016 + 0.026 * vol + 0.016 * lush) * lightK
+          : K.lum * g.lumMul * (0.07 + 0.42 * vol + 0.2 * up) * fresh * share * (g.dim ?? 1) * lightK;
+        // SMALLER, NOT DIMMER: a midground form that would be faint shrinks
+        // and keeps enough light to read as a soft glow, instead of a wide,
+        // faint smudge. Its total light stays about the same.
+        const L0 = 0.15;
+        // (mostly in gentle passages, where the smudges showed; in a full
+        // chorus this would only concentrate the light)
+        const gentleGate = clamp(1.5 - 2 * (this.intensity ?? 0.5));
+        const faint = far ? 0 : clamp(1 - lum / L0) * gentleGate;
+        const shrink = 1 - 0.48 * faint;
+        if (!far) lum = Math.min(Math.max(lum, L0 * 0.8), lum / (shrink * shrink));
+        let scale = g.size * (far ? 1 : sizeK) * (0.15 + 0.85 * Math.min(g.grow, 1.4)) * (0.78 + 0.45 * vol) * (1 + 0.28 * g.swell)
+          * (1 - 0.18 * tension + 0.15 * release) * (1 + 0.06 * b) * shrink;
         const stretch = g.aspect * (1 + mid * 0.3 * Math.sin(g.seed + this.t * 0.07));
         // BASS: larger forms are gently pushed away from the centre of focus
         const dx = g.x - this.focus.x, dy = g.y - this.focus.y, dl = Math.hypot(dx, dy) + 0.05;
@@ -877,17 +894,30 @@ void main(){
         A.set([g.x + (dx / dl) * push, g.y + (dy / dl) * push, scale * Math.sqrt(stretch), scale / Math.sqrt(stretch)], i * 4);
         // MID: folding; quiet passages fold less
         const warp = far ? K.fold : (K.fold + mid * 0.6 + lush * 0.2) * (1 - 0.35 * quiet);
-        // a fresh drop is densest; it thins as it spreads
-        const fresh = 0.75 + 0.5 * Math.exp(-g.age / (g.growTau * 3));
-        const lum = far
-          ? (0.016 + 0.026 * vol + 0.016 * lush) * lightK
-          : K.lum * g.lumMul * (0.07 + 0.42 * vol + 0.2 * up) * fresh * share * (g.dim ?? 1) * lightK;
         B.set([g.rot, warp, g.seed, lum * g.presence * (1 + 0.14 * b) * (1 + 0.18 * release)], i * 4);
-        const c = g.col || [0.5, 0.5, 0.5];
+        // DIM COLOURS STAY CLEAN: faint warm light turns brown on the dark, so
+        // a faint form is lifted toward a lighter, rosier tint (gold -> peach)
+        let c = g.col || [0.5, 0.5, 0.5];
+        const dimness = far ? 0 : clamp(1 - lum / 0.22) * gentleGate;
+        if (dimness > 0) {
+          const warm = clamp((c[0] - c[2]) * 2.5);
+          c = [
+            c[0] + (1 - c[0]) * 0.22 * dimness,
+            c[1] + (1 - c[1]) * 0.12 * dimness,
+            c[2] + (1 - c[2]) * (0.22 + 0.25 * warm) * dimness,
+          ];
+        }
         C.set([c[0], c[1], c[2], g.glow * g.presence], i * 4);
         D.set([g.rip, g.ripAmp, g.flowA || 0, g.billow], i * 4);
         // quiet passages soften: lower falloff and gentler texture
-        E.set([g.sil, g.fall * (1 - 0.3 * quiet) * (1 + 0.4 * tension), g.tex * (1 - 0.35 * quiet), g.edge], i * 4);
+        // and a faint form is shaped like a glow (brightest in the middle,
+        // fading smoothly out), not a flat, mottled stain
+        E.set([
+          g.sil,
+          g.fall * (1 - 0.3 * quiet) * (1 + 0.4 * tension) * (1 + 1.3 * faint),
+          g.tex * (1 - 0.35 * quiet) * (1 - 0.7 * faint),
+          g.edge * (1 - 0.6 * faint),
+        ], i * 4);
         // hearts swell with the (smoothed) music; tendrils glow with the
         // midrange and reach as far as they've grown; both gentler for soft songs
         const gentle = this.idle ? 0.7 : 0.15 + 0.85 * Math.pow(intensity, 1.5);
