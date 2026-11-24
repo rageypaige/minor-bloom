@@ -49,6 +49,16 @@ phone with **audio file**.
   the form smaller and softer; full, driving music makes it larger and
   brighter.
 
+## Trying the particle waves
+
+A second style is being explored at
+[paigelatimer.ca/minor-bloom/?style=waves](https://paigelatimer.ca/minor-bloom/?style=waves):
+tens of thousands of particles of light stream along flowing wave lines,
+layering into silky sheets in the same night sky. Volume sets their speed,
+brightness and trail length; fullness how many waves there are and how far
+they spread; the midrange how they curve and fold; bass a slow swell rolling
+through; highs a dust of particles drifting off; harmony their colour.
+
 ## What it listens for
 
 | In the music | In the sky |
@@ -73,7 +83,8 @@ and then glides there.
 - `index.html`, `css/style.css`: the page
 - `js/listener.js`: audio capture and analysis (loudness, bass/mid/high,
   brightness, key, chords, tempo, melody)
-- `js/atmosphere.js`: the sky (WebGL2)
+- `js/atmosphere.js`: the night-sky style (WebGL2)
+- `js/waves.js`: the particle-waves style, at `?style=waves` (WebGL2)
 - `js/shared.js`: noise, palettes and mood words
 - `js/app.js`: ties it all together
 

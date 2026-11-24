@@ -11,7 +11,12 @@
   document.documentElement.dataset.tab = canTab ? 'yes' : 'no';
 
   let atmos = null;
-  try { atmos = new MB.Atmosphere($('#atmos')); } catch (e) { console.warn('Atmosphere unavailable:', e); }
+  // ?style=waves tries the particle-waves style; otherwise the night-sky atmosphere
+  const wantWaves = new URLSearchParams(location.search).get('style') === 'waves';
+  try { atmos = wantWaves && MB.Waves ? new MB.Waves($('#atmos')) : new MB.Atmosphere($('#atmos')); } catch (e) {
+    console.warn('Style unavailable:', e);
+    if (wantWaves) { try { atmos = new MB.Atmosphere($('#atmos')); } catch (e2) { /* no WebGL2 */ } }
+  }
   let lastF = null;
 
   const finalCanvas = $('#final');
