@@ -101,7 +101,9 @@ void main(){
   vec2 along = vec2(-g.y, g.x) / sqrt(g2) * (h1(seed * 11.3) < .5 ? -1. : 1.);
   // some particles (more with the highs) drift off the lines as dust
   float dusty = step(1. - u_dust, h1(seed * 7.7));
-  vec2 v = toLine * u_pull * (1. - .85 * dusty) + along * u_flow * (1. + .5 * dusty);
+  // background particles (see the point shader) drift more slowly: parallax
+  float layerSpeed = h1(seed * 6.1) < .45 ? .6 : 1.;
+  vec2 v = toLine * u_pull * (1. - .85 * dusty) + along * u_flow * (1. + .5 * dusty) * layerSpeed;
   // TURBULENCE: layered eddies that push particles off their lines
   if (u_turb > .001) {
     vec2 tq = p * 3.2 + u_seedOff;
@@ -136,8 +138,9 @@ void main(){ o = vec4(texture(u_prev, gl_FragCoord.xy / u_res).rgb * u_keep, 1.)
   // 2b. Draw the particles as points of light.
   const PTS_VS = `#version 300 es
 precision highp float;
-uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_spread, u_visible; uniform vec2 u_center;
-out float v_a; out float v_s; out float v_acc;
+uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_spread, u_visible, u_time, u_lumin, u_glint;
+uniform vec2 u_center;
+out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_glint; out float v_sharp;
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
 void main(){
   ivec2 ij = ivec2(gl_VertexID % u_w, gl_VertexID / u_w);
@@ -152,35 +155,89 @@ void main(){
   // TENDER: only some particles are drawn, so the filaments are sparse
   v_a *= step(h1(s.w * 2.9), u_visible);
   v_acc = step(h1(s.w * 13.7), .035); // a few particles can carry luminous accents
-  gl_Position = vec4(s.x / (u_asp * .5), s.y / .5, 0., 1.);
-  gl_PointSize = u_size * (.7 + .6 * h1(s.w * 5.3));
+
+  // DEPTH: background (45%), middle (42%), foreground (13%)
+  float lh = h1(s.w * 6.1);
+  float layer = lh < .45 ? 0. : lh < .87 ? 1. : 2.;
+  v_layer = layer;
+  vec2 pos = s.xy;
+  // the background sits a little further back: drawn slightly closer to the
+  // centre (parallax) and fainter; the foreground slightly forward
+  pos = u_center + (pos - u_center) * (layer == 0. ? .9 : layer == 2. ? 1.04 : 1.);
+  float size = layer == 0. ? .75 : layer == 2. ? 1.35 : 1.;
+  v_sharp = layer == 0. ? 0. : layer == 2. ? 1. : .55;
+  v_a *= layer == 0. ? .45 : layer == 2. ? 1.15 : 1.;
+
+  // CATCHING THE LIGHT: now and then a single particle flares briefly, like
+  // a distant star; more often when the music is intense or bright up top
+  // (an instant, so a moving particle leaves a single point, not a trail)
+  float ph = u_time * (1.2 + 1.6 * h1(s.w * 8.3)) + h1(s.w * 4.9) * 40.;
+  float pk = pow(max(0., sin(ph)), 900.);
+  v_glint = pk * step(h1(s.w * 17.1), u_glint) * (layer == 0. ? .4 : 1.);
+  gl_Position = vec4(pos.x / (u_asp * .5), pos.y / .5, 0., 1.);
+  gl_PointSize = u_size * size * (.7 + .6 * h1(s.w * 5.3)) * (1. + 1.4 * v_glint);
 }`;
   const PTS_FS = `#version 300 es
 precision highp float;
-uniform vec3 u_colA, u_colB, u_colAcc; uniform float u_bright, u_accent;
-in float v_a; in float v_s; in float v_acc;
+uniform vec3 u_colA, u_colB, u_colAcc; uniform float u_bright, u_accent, u_lumin;
+in float v_a; in float v_s; in float v_acc; in float v_layer; in float v_glint; in float v_sharp;
 out vec4 o;
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
 void main(){
   vec2 c = gl_PointCoord - .5;
-  float disc = smoothstep(.5, .2, length(c));
+  float rr = length(c);
+  // sharper points in front, softer behind
+  float disc = mix(exp(-rr * rr * 14.), smoothstep(.5, .15, rr), v_sharp);
   vec3 col = mix(u_colA, u_colB, h1(v_s * 9.1));
   vec3 lit = col * (.6 + .8 * h1(v_s * 2.3));
+  // TONAL ACCENTS: a few strands carry a lighter shade of their own colour,
+  // revealed as the music grows more intense
+  float tone = step(h1(v_s * 21.7), .07) * step(.5, v_layer);
+  lit = mix(lit, mix(col, vec3(1., .97, .92), .45) * 1.6, tone * u_lumin * .8);
   // STORMY / RESTLESS: occasional luminous accent strands
   lit += u_colAcc * v_acc * u_accent * 4.;
+  // a particle catching the light: a brief soft-white flare
+  lit += mix(col, vec3(1., .97, .93), .7) * v_glint * 7.;
   o = vec4(lit * u_bright * v_a * disc, 1.);
+}`;
+
+  // 2c. A soft glow source: a quarter-size copy of only the brightest light.
+  const GLOW = `#version 300 es
+precision highp float;
+uniform sampler2D u_light; uniform vec2 u_px; uniform float u_thresh;
+out vec4 o;
+void main(){
+  vec2 uv = gl_FragCoord.xy * u_px;
+  vec3 a = vec3(0.);
+  for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++)
+    a += texture(u_light, uv + (vec2(i, j) - 1.5) * u_px * .25).rgb;
+  a /= 16.;
+  float l = dot(a, vec3(.3, .59, .11));
+  o = vec4(a * smoothstep(u_thresh, u_thresh * 2.5, l), 1.);
 }`;
 
   // 3. Tone map, warm crests, stars and film grain.
   const OUT = `#version 300 es
 precision highp float;
-uniform sampler2D u_light; uniform vec2 u_res; uniform float u_time, u_exposure; uniform vec3 u_base;
+uniform sampler2D u_light, u_glow; uniform vec2 u_res, u_gpx; uniform float u_time, u_exposure, u_lumin, u_glowAmt; uniform vec3 u_base;
 uniform vec4 u_stars[${MAXS}]; uniform int u_ns;
 out vec4 o;
 float hash(vec2 p){ uvec2 q = uvec2(ivec2(floor(p))) * uvec2(1597334673U, 3812015801U); uint n = (q.x ^ q.y) * 1597334673U; return float(n) * (1. / 4294967295.); }
 void main(){
   vec2 uv = gl_FragCoord.xy / u_res;
   vec3 L = texture(u_light, uv).rgb;
+  // SELECTIVE LUMINOSITY: where strands converge and overlap the light builds
+  // up faster than it adds; intense music reveals this, quiet music doesn't
+  float ll = dot(L, vec3(.3, .59, .11));
+  L *= 1. + u_lumin * 2.4 * smoothstep(.1, .8, ll);
+  // SOFT DIFFUSED LIGHT around the most luminous filaments (wide, faint)
+  vec3 G = vec3(0.);
+  for (int i = 0; i < 12; i++) {
+    float a = float(i) * .5236, rad = (i % 2 == 0) ? 2.5 : 5.;
+    G += texture(u_glow, uv + vec2(cos(a), sin(a)) * rad * u_gpx).rgb;
+  }
+  G += texture(u_glow, uv).rgb * 2.;
+  L += G / 14. * u_glowAmt;
   // stars, hidden where the waves are bright
   float fog = dot(L, vec3(.3, .59, .11));
   float clear = 1. - smoothstep(.05, .45, fog);
@@ -258,6 +315,7 @@ void main(){
       this.pFade = this._prog(QUAD_VS, FADE);
       this.pPts = this._prog(PTS_VS, PTS_FS);
       this.pOut = this._prog(QUAD_VS, OUT);
+      this.pGlow = this._prog(QUAD_VS, GLOW);
       this.quad = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -328,6 +386,7 @@ void main(){
       this.dpr = dpr;
       this.asp = w / h;
       this.light = [this._tex(this.c.width, this.c.height, 'light'), this._tex(this.c.width, this.c.height, 'light')];
+      this.glow = this._tex(Math.max(16, Math.round(this.c.width / 4)), Math.max(16, Math.round(this.c.height / 4)), 'light');
       for (const L of this.light) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, L.fb);
         gl.clearColor(0, 0, 0, 1);
@@ -464,6 +523,11 @@ void main(){
       // wander and change course irregularly
       const wander = MB.noise3(t * (0.012 + 0.05 * M.instab), this.focus.seed, 7.7);
       this.ang = 0.3 * Math.sin(t * 0.013 + this.focus.seed) + 0.9 * M.instab * wander;
+      // LUMINOSITY follows emotional intensity: how loud and driven the
+      // music really is, how full, and how strongly the mood carries accents.
+      // Quiet passages stay very subtle; intense ones reveal light and detail.
+      const lumRaw = this.idle ? 0.15 : clamp(0.55 * (this.aro ?? 0.3) * (0.4 + 0.6 * (this.vol ?? 0.3)) + 0.3 * (this.lush ?? 0) * (this.vol ?? 0.3) + 0.15 * (M.accent || 0));
+      this.lumin = (this.lumin ?? lumRaw) + (lumRaw - (this.lumin ?? lumRaw)) * ease(dt, lumRaw > (this.lumin ?? lumRaw) ? 1.5 : 4);
       // rhythmic accents (restless, stormy): a quick rise on strong beats
       if (f.beat && !f.silent) this.acc = Math.max(this.acc || 0, f.beatStrength || 0.5);
       this.acc = (this.acc || 0) * Math.exp(-dt / 0.35);
@@ -572,6 +636,11 @@ void main(){
       gl.uniform3fv(P.u.u_colB, this.colB);
       gl.uniform3fv(P.u.u_colAcc, this.colAcc || [1, 1, 1]);
       gl.uniform1f(P.u.u_visible, M.visible);                    // MOOD: sparseness
+      const lumin = this.lumin ?? 0.2;
+      gl.uniform1f(P.u.u_time, this.t);
+      gl.uniform1f(P.u.u_lumin, lumin);
+      // how many particles can catch the light: a few always, more when intense
+      gl.uniform1f(P.u.u_glint, this.idle ? 0.003 : 0.0015 + 0.009 * lumin + 0.004 * high);
       gl.uniform1f(P.u.u_accent, M.accent * (0.15 + 0.85 * acc) * (this.idle ? 0 : 1)); // MOOD: luminous accents
       // brightness per particle: louder is brighter; fewer particles each brighter
       const per = (98304 / (this.PW * this.PH)) * (this.idle ? 0.007 : 0.009 + 0.02 * vol);
@@ -582,6 +651,21 @@ void main(){
       gl.bindVertexArray(null);
       this.light = [lOut, lIn];
 
+      // 2c. soft glow source from the brightest light only
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.glow.fb);
+      gl.viewport(0, 0, this.glow.w, this.glow.h);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      P = this.pGlow;
+      gl.useProgram(P.p);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, lOut.tex);
+      gl.uniform1i(P.u.u_light, 0);
+      gl.uniform2f(P.u.u_px, 1 / this.glow.w, 1 / this.glow.h);
+      gl.uniform1f(P.u.u_thresh, 0.16);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
       // 3. output
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, this.c.width, this.c.height);
@@ -590,11 +674,21 @@ void main(){
       gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
       P = this.pOut;
       gl.useProgram(P.p);
+      gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, lOut.tex);
       gl.uniform1i(P.u.u_light, 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.glow.tex);
+      gl.uniform1i(P.u.u_glow, 1);
+      gl.activeTexture(gl.TEXTURE0);
       gl.uniform2f(P.u.u_res, this.c.width, this.c.height);
+      gl.uniform2f(P.u.u_gpx, 1 / this.glow.w, 1 / this.glow.h);
       gl.uniform1f(P.u.u_time, this.t);
-      gl.uniform1f(P.u.u_exposure, 1.2);
+      const lum2 = this.lumin ?? 0.2;
+      gl.uniform1f(P.u.u_lumin, lum2);
+      gl.uniform1f(P.u.u_glowAmt, 0.15 + 0.55 * lum2);
+      // quiet passages sit lower; intense ones open up
+      gl.uniform1f(P.u.u_exposure, 0.95 + 0.75 * lum2);
       const tint = this.colA.map((v) => v * 0.02);
       gl.uniform3fv(P.u.u_base, [0.03 + tint[0], 0.03 + tint[1], 0.04 + tint[2]]);
       const sa = new Float32Array(MAXS * 4);
