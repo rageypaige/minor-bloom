@@ -64,10 +64,11 @@ float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }`;
   //  - a travelling pinch along the curve makes the ribbon narrow, twist
   //    and widen, catching more light where it folds.
   const GUIDE_FN = `
-uniform float u_guide, u_gBand, u_gPull, u_gWarp, u_gSwell;
+uniform float u_guide, u_gBand, u_gPull, u_gWarp, u_gSwell, u_gArch, u_gLen, u_gFine;
 uniform vec3 u_gA, u_gK, u_gPh, u_gTw;
-float gY(float x){ return u_gA.x * sin(u_gK.x * x + u_gPh.x) + u_gA.y * sin(u_gK.y * x + u_gPh.y) + u_gA.z * sin(u_gK.z * x + u_gPh.z); }
-float gDY(float x){ return u_gA.x * u_gK.x * cos(u_gK.x * x + u_gPh.x) + u_gA.y * u_gK.y * cos(u_gK.y * x + u_gPh.y) + u_gA.z * u_gK.z * cos(u_gK.z * x + u_gPh.z); }
+// (u_gArch bows the whole gesture into an arc)
+float gY(float x){ return u_gA.x * sin(u_gK.x * x + u_gPh.x) + u_gA.y * sin(u_gK.y * x + u_gPh.y) + u_gA.z * sin(u_gK.z * x + u_gPh.z) + u_gArch * x * x; }
+float gDY(float x){ return u_gA.x * u_gK.x * cos(u_gK.x * x + u_gPh.x) + u_gA.y * u_gK.y * cos(u_gK.y * x + u_gPh.y) + u_gA.z * u_gK.z * cos(u_gK.z * x + u_gPh.z) + 2. * u_gArch * x; }
 // signed distance from the guide (approximate), in the guide's frame
 float gDist(vec2 r){ float sl = gDY(r.x); return (r.y - gY(r.x)) / sqrt(1. + sl * sl); }
 // 1 = full width; smaller where the ribbon pinches and turns over
@@ -94,8 +95,10 @@ float field(vec2 p, float ang, vec2 off){
   vec2 r = mat2(ca, sa, -sa, ca) * p;
   vec2 q = r * u_freq + off;
   // the waves bend and fold (midrange, and the mood's curvature)
+  // (guided: the finer octave, which makes filaments cross at odd angles,
+  // is scaled by u_gFine)
   float w = fbm(q * .55 + vec2(u_time * .018, 1.7))
-          + .5 * fbm(q * 1.1 + vec2(-u_time * .025, 8.3) + fbm(q * .4 + 3.1));
+          + .5 * (u_guide > .5 ? u_gFine : 1.) * fbm(q * 1.1 + vec2(-u_time * .025, 8.3) + fbm(q * .4 + 3.1));
   // a slow swell rolling along them (bass)
   float swell = u_bassAmp * sin(r.x * 2.2 + u_bassPhase);
   float rise = r.y;
@@ -171,6 +174,11 @@ void main(){
   // the waves spread out as the music fills out, and gather when it's sparse
   vec2 c = p - u_center;
   vec2 cn = abs(c / vec2(u_spread * u_asp * .6, u_spread * .6));
+  if (u_guide > .5) {
+    // guided: the same soft rectangle, but aligned with the gesture
+    float ca = cos(u_ang), sa = sin(u_ang);
+    cn = abs((mat2(ca, sa, -sa, ca) * c) / vec2(u_spread * u_gLen * .6, u_spread * .6 + u_gBand));
+  }
   float r = pow(pow(cn.x, 4.) + pow(cn.y, 4.), .25); // a soft rectangle, reaching the corners
   v -= c * max(r - 1., 0.) * .6;
   p += v * u_dt;
@@ -184,7 +192,7 @@ void main(){
     if (u_guide > .5) {
       // guided: reborn along the gesture, within its band
       float ca = cos(u_ang), sa = sin(u_ang);
-      float rx = j.x * u_spread * u_asp * .6;
+      float rx = j.x * u_spread * u_gLen * .6;
       vec2 rg = vec2(rx, gY(rx) + j.y * u_gBand * .8);
       p = u_center + transpose(mat2(ca, sa, -sa, ca)) * rg;
     }
@@ -206,7 +214,7 @@ precision highp float;
 uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_spread, u_visible, u_ang;
 ${GUIDE_FN}
 uniform vec2 u_center;
-out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp;
+out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp; out vec2 v_pos;
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
 void main(){
   ivec2 ij = ivec2(gl_VertexID % u_w, gl_VertexID / u_w);
@@ -218,6 +226,7 @@ void main(){
   float r = pow(pow(cn.x, 4.) + pow(cn.y, 4.), .25);
   v_a *= 1. - smoothstep(.7, 1.1, r);
   v_s = s.w;
+  v_pos = s.xy;
   if (u_guide > .5) {
     // the core of the gesture is brightest; filaments that wander out from
     // it are fainter; where the ribbon pinches and folds it catches light
@@ -247,8 +256,15 @@ void main(){
 }`;
   const PTS_FS = `#version 300 es
 precision highp float;
-uniform vec3 u_colA, u_colB, u_colAcc; uniform float u_bright, u_accent, u_lumin, u_shimmer, u_time;
-in float v_a; in float v_s; in float v_acc; in float v_layer; in float v_sharp;
+uniform vec3 u_colA, u_colB, u_colAcc; uniform float u_bright, u_accent, u_lumin, u_shimmer, u_time, u_irid;
+in float v_a; in float v_s; in float v_acc; in float v_layer; in float v_sharp; in vec2 v_pos;
+// rotate a colour's hue (YIQ), keeping its brightness
+vec3 hueRot(vec3 c, float a){
+  vec3 y = mat3(.299, .596, .211, .587, -.274, -.523, .114, -.322, .312) * c;
+  float cs = cos(a), sn = sin(a);
+  y.yz = vec2(y.y * cs - y.z * sn, y.y * sn + y.z * cs);
+  return max(mat3(1., 1., 1., .956, -.272, -1.106, .621, -.647, 1.703) * y, 0.);
+}
 out vec4 o;
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
 void main(){
@@ -257,6 +273,9 @@ void main(){
   // sharper points in front, softer behind
   float disc = mix(exp(-rr * rr * 14.), smoothstep(.5, .15, rr), v_sharp);
   vec3 col = mix(u_colA, u_colB, h1(v_s * 9.1));
+  // IRIDESCENCE: an understated hue drift across the field and between
+  // fibres, within the palette (u_irid = max shift in radians; 0 = off)
+  if (u_irid > 0.) col = hueRot(col, u_irid * sin(dot(v_pos, vec2(3.1, 2.3)) + u_time * .07 + h1(v_s * 3.3) * 1.2));
   vec3 lit = col * (.6 + .8 * h1(v_s * 2.3));
   // TONAL ACCENTS: a few strands carry a lighter shade of their own colour,
   // revealed as the music grows more intense
@@ -346,8 +365,22 @@ void main(){
     turb: 0.5,          // share of the original eddy turbulence kept
     band: 0.12, bandLush: 0.08, bandVol: 0.06, // free-movement band around the guide
     warp: 0.3, swell: 0.4, // share of the original noise warp / bass swell kept inside the band
-    pull: 1.2,          // strength of the soft restoring force outside the band
+    pull: 1.5,          // strength of the soft restoring force outside the band
     wander: 0.35,       // how much of the original directional wander remains
+
+    // VARIETY. Each refinement is independent; set its amount to 0 to turn
+    // it off. All evolve continuously from slow noise (minutes), never switch.
+    orient: 1.2,        // rad: how far the gesture's axis turns (diagonal..near-vertical)
+    orientSpeed: 0.011, //   how quickly it turns
+    arch: 0.45,         // bow into sweeping arcs (curvature at the ends)
+    archSpeed: 0.009,
+    scaleRange: 0.35,   // scale drift: 1 +/- this (intimate .. expansive)
+    scaleEnergy: 0.25,  //   energetic music opens it up a little more
+    scaleSpeed: 0.008,
+    curl: 1.3,          // occasional swelling of the folds into curls/overlaps
+    curlSpeed: 0.014,
+    fine: 0.55,         // share of the fine warp octave kept (1 = as before; less = less crosshatching)
+    irid: 0.32,         // rad: max secondary-hue shift (iridescence; 0 = off)
   };
 
   // Colour families by tonal temperature. They share a similar lightness on
@@ -622,6 +655,23 @@ void main(){
       g.tw += dt * (G.pinchSpeed + G.pinchSpeedEnergy * E);
       g.Tw = [clamp(G.pinch + G.pinchTension * T, 0, 0.9), k1 * G.pinchK, g.tw];
       g.band = G.band + G.bandLush * lush + G.bandVol * vol;
+
+      // ---- VARIETY (slow, continuous) ----
+      const sn = (sp, z) => clamp(N(t * sp, sd * 1.3, z) * 2.6, -1, 1); // smooth, roughly -1..1
+      // orientation: the whole composition turns slowly
+      g.orient = G.orient * sn(G.orientSpeed, 31);
+      this.ang += g.orient;
+      // arched sweeps
+      g.arch = G.arch * sn(G.archSpeed, 47);
+      // scale: intimate .. expansive (energy opens it a little)
+      g.scale = clamp(1 + G.scaleRange * sn(G.scaleSpeed, 59) + G.scaleEnergy * (E - 0.4), 0.5, 1.6);
+      g.A = g.A.map((v) => v * g.scale);
+      g.band *= Math.sqrt(g.scale);
+      // curls: now and then the folds swell enough to overlap
+      g.A[1] *= 1 + G.curl * Math.max(0, sn(G.curlSpeed, 73));
+      // length of the gesture across the screen for its current orientation
+      g.len = Math.abs(Math.cos(this.ang)) * this.asp + Math.abs(Math.sin(this.ang));
+      g.K = g.K.map((k) => k * Math.max(1, this.asp) / Math.max(0.8, g.len));
     }
     _gY(x) { const g = this.g; return g.A[0] * Math.sin(g.K[0] * x + g.ph[0]) + g.A[1] * Math.sin(g.K[1] * x + g.ph[1]) + g.A[2] * Math.sin(g.K[2] * x + g.ph[2]); }
     _setGuide(P) {
@@ -636,6 +686,9 @@ void main(){
       gl.uniform1f(P.u.u_gPull, GUIDE.pull);
       gl.uniform1f(P.u.u_gWarp, GUIDE.warp);
       gl.uniform1f(P.u.u_gSwell, GUIDE.swell);
+      gl.uniform1f(P.u.u_gArch, g.arch || 0);
+      gl.uniform1f(P.u.u_gLen, g.len || this.asp);
+      gl.uniform1f(P.u.u_gFine, GUIDE.fine);
     }
 
     update(f, dt) {
@@ -823,12 +876,13 @@ void main(){
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension)); // MOOD + TENSION: intersecting currents
       gl.uniform1f(P.u.u_crossAng, 1.05 + 0.4 * Math.sin(this.t * 0.02));
       gl.uniform2f(P.u.u_seedOff, (this.seedOff || [0, 0])[0], (this.seedOff || [0, 0])[1]);
-      this.spreadNow = (0.5 + 0.35 * lush + 0.35 * vol) * M.spread * (1 - 0.2 * (this.quietAmt || 0)); // INTENSITY + MOOD: expansion
+      this.spreadNow = (0.5 + 0.35 * lush + 0.35 * vol) * M.spread * (1 - 0.2 * (this.quietAmt || 0)) * (this.guides && this.g ? this.g.scale : 1); // INTENSITY + MOOD (+ VARIETY scale): expansion
       gl.uniform1f(P.u.u_spread, this.spreadNow);                // FULLNESS: how far it spreads
       gl.uniform1f(P.u.u_bassAmp, (0.04 + 0.2 * bass) * M.swell); // LOW + MOOD: a slow swell
       gl.uniform1f(P.u.u_bassPhase, this.bassPhase);
       gl.uniform2f(P.u.u_center, this.focus.x, this.focus.y);
       gl.uniform1f(P.u.u_ang, this.ang);
+      gl.uniform1f(P.u.u_irid, this.guides ? GUIDE.irid : 0);
       this._setGuide(P);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       this.state = [sOut, sIn];
@@ -858,6 +912,7 @@ void main(){
       gl.uniform2f(P.u.u_center, this.focus.x, this.focus.y);
       gl.uniform1f(P.u.u_asp, this.asp);
       gl.uniform1f(P.u.u_ang, this.ang);
+      gl.uniform1f(P.u.u_irid, this.guides ? GUIDE.irid : 0);
       this._setGuide(P);
       gl.uniform1f(P.u.u_size, 2.4 * this.dpr);                 // thicker lines
       gl.uniform3fv(P.u.u_colA, this.colA);

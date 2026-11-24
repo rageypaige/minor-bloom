@@ -55,8 +55,11 @@ phone with **audio file**.
   curve evolving on slow, medium and bass-driven timescales shapes the wave
   field, and particles move freely within a band around it, drawn back
   gently when they stray. The gesture stretches, folds, pinches and turns
-  over; filaments drift out and rejoin. Tuning lives in the `GUIDE` table in
-  `js/waves.js`.
+  over; filaments drift out and rejoin. Over minutes the composition also
+  slowly turns (horizontal, diagonal, near-vertical), arches, grows from
+  intimate to expansive and now and then curls over itself, with a faint
+  iridescent hue drift. Tuning lives in the `GUIDE` table in `js/waves.js`;
+  each variety setting can be set to 0 to turn it off.
 - **Unguided particle waves**, at
   [paigelatimer.ca/minor-bloom/?style=waves](https://paigelatimer.ca/minor-bloom/?style=waves): tens of thousands of particles of light
   stream along flowing wave lines, layering into silky sheets in a night sky.
