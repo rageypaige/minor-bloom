@@ -49,9 +49,16 @@ phone with **audio file**.
   the form smaller and softer; full, driving music makes it larger and
   brighter.
 
-## Two styles
+## Styles
 
-- **Particle waves** (the default): tens of thousands of particles of light
+- **Guided ribbons** (the default): the particle simulation with soft compositional guidance. A guide
+  curve evolving on slow, medium and bass-driven timescales shapes the wave
+  field, and particles move freely within a band around it, drawn back
+  gently when they stray. The gesture stretches, folds, pinches and turns
+  over; filaments drift out and rejoin. Tuning lives in the `GUIDE` table in
+  `js/waves.js`.
+- **Unguided particle waves**, at
+  [paigelatimer.ca/minor-bloom/?style=waves](https://paigelatimer.ca/minor-bloom/?style=waves): tens of thousands of particles of light
   stream along flowing wave lines, layering into silky sheets in a night sky.
   Volume sets their speed and brightness and how thick the waves get;
   fullness how many waves there are and how far they spread; the midrange how
@@ -99,14 +106,6 @@ phone with **audio file**.
   - *silence and quiet*: movement softens and strands gradually dissolve
   Each has its own attack and decay, and levels are measured against each
   track's own sustained loudness, so differently mastered songs behave alike.
-- **Guided ribbons** (experimental), at
-  [paigelatimer.ca/minor-bloom/?style=ribbons](https://paigelatimer.ca/minor-bloom/?style=ribbons):
-  the original particle simulation with soft compositional guidance. A guide
-  curve evolving on slow, medium and bass-driven timescales shapes the wave
-  field, and particles move freely within a band around it, drawn back
-  gently when they stray. The gesture stretches, folds, pinches and turns
-  over; filaments drift out and rejoin. Tuning lives in the `GUIDE` table in
-  `js/waves.js`.
 - **Night sky**, at
   [paigelatimer.ca/minor-bloom/?style=sky](https://paigelatimer.ca/minor-bloom/?style=sky):
   one soft form of light with growing tendrils, described below.

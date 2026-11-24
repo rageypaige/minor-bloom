@@ -12,10 +12,11 @@
 
   let atmos = null;
   // The particle waves are the default; ?style=sky keeps the night-sky style
-  // ?style=ribbons tries the experimental composition-driven ribbons
+  // Default: the guided ribbons. ?style=waves keeps the unguided particle
+  // waves, ?style=sky the night-sky style. (?style=ribbons still works.)
   const styleQ = new URLSearchParams(location.search).get('style');
   const wantWaves = styleQ !== 'sky';
-  const waveOpts = styleQ === 'ribbons' ? { mode: 'guides' } : {};
+  const waveOpts = styleQ === 'waves' ? {} : { mode: 'guides' };
   try { atmos = wantWaves && MB.Waves ? new MB.Waves($('#atmos'), waveOpts) : new MB.Atmosphere($('#atmos')); } catch (e) {
     console.warn('Style unavailable:', e);
     if (wantWaves) { try { atmos = new MB.Atmosphere($('#atmos')); } catch (e2) { /* no WebGL2 */ } }
