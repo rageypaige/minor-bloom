@@ -76,6 +76,20 @@ phone with **audio file**.
   Moods glide into each other rather than switching. Half of the blend is
   the song's running average, and the key seeds the shape of the wave field,
   so each song settles into a recognisable landscape of its own.
+  **Each part of the music has its own role** in the same living field:
+  - *low frequencies*: deep, slow currents that carry the whole field
+  - *mid frequencies*: the filaments' curvature and expressive movement
+  - *high frequencies*: a fine, fleeting shimmer on the strands' surface
+  - *percussive hits*: soft ripples travelling through the strands (strong
+    for drums, faint for a piano)
+  - *harmony*: gradual colour changes; chords far from the key reach toward
+    a contrasting colour family
+  - *harmonic tension* (dissonance, chromatic or distant chords): more
+    intersection, folding and turbulence
+  - *dynamic intensity*: luminosity, expansion and strand density
+  - *silence and quiet*: movement softens and strands gradually dissolve
+  Each has its own attack and decay, and levels are measured against each
+  track's own sustained loudness, so differently mastered songs behave alike.
 - **Night sky**, at
   [paigelatimer.ca/minor-bloom/?style=sky](https://paigelatimer.ca/minor-bloom/?style=sky):
   one soft form of light with growing tendrils, described below.

@@ -58,12 +58,16 @@ precision highp float;
 uniform sampler2D u_state;
 uniform float u_time, u_dt, u_asp;
 uniform float u_freq, u_warp, u_levels, u_pull, u_flow, u_dust, u_spread, u_bassAmp, u_bassPhase;
-uniform vec2 u_center, u_seedOff; uniform float u_ang, u_thick, u_cross, u_crossAng, u_turb, u_strands;
+uniform vec2 u_center, u_seedOff; uniform float u_ang, u_thick, u_cross, u_crossAng, u_turb, u_strands, u_deep, u_deepPh, u_loosen;
+uniform vec4 u_rip[4];
 out vec4 o;
 ${NOISE}
 // Long wave lines that run across the screen (not closed loops): the field
 // rises steadily in one direction, and noise bends the lines into waves.
 float field(vec2 p, float ang, vec2 off){
+  // LOW FREQUENCIES: deep, slow currents carry the whole field; large-scale
+  // displacement that every strand rides on
+  p += u_deep * (vec2(fbm(p * .35 + vec2(u_deepPh, 2.1)), fbm(p * .35 + vec2(7.4, -u_deepPh))) - .47) * 2.;
   float ca = cos(ang), sa = sin(ang);
   vec2 r = mat2(ca, sa, -sa, ca) * p;
   vec2 q = r * u_freq + off;
@@ -103,7 +107,17 @@ void main(){
   float dusty = step(1. - u_dust, h1(seed * 7.7));
   // background particles (see the point shader) drift more slowly: parallax
   float layerSpeed = h1(seed * 6.1) < .45 ? .6 : 1.;
-  vec2 v = toLine * u_pull * (1. - .85 * dusty) + along * u_flow * (1. + .5 * dusty) * layerSpeed;
+  // QUIET / SILENCE: the lines loosen their hold, so strands slowly dissolve
+  vec2 v = toLine * u_pull * (1. - .85 * dusty) * (1. - .75 * u_loosen) + along * u_flow * (1. + .5 * dusty) * layerSpeed;
+  // PERCUSSION: ripples travel outward through the strands, nudging them
+  // across their lines; the lines then draw them back
+  vec2 nrm = g / sqrt(g2);
+  for (int i = 0; i < 4; i++) {
+    vec4 R = u_rip[i];
+    if (R.w <= 0.) continue;
+    float dd = length(p - R.xy) - R.z * .42;
+    v += nrm * R.w * exp(-dd * dd / .004) * sin(dd * 55.) * exp(-R.z * .9);
+  }
   // TURBULENCE: layered eddies that push particles off their lines
   if (u_turb > .001) {
     vec2 tq = p * 3.2 + u_seedOff;
@@ -173,7 +187,7 @@ void main(){
 }`;
   const PTS_FS = `#version 300 es
 precision highp float;
-uniform vec3 u_colA, u_colB, u_colAcc; uniform float u_bright, u_accent, u_lumin;
+uniform vec3 u_colA, u_colB, u_colAcc; uniform float u_bright, u_accent, u_lumin, u_shimmer, u_time;
 in float v_a; in float v_s; in float v_acc; in float v_layer; in float v_sharp;
 out vec4 o;
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
@@ -188,6 +202,11 @@ void main(){
   // revealed as the music grows more intense
   float tone = step(h1(v_s * 21.7), .07) * step(.5, v_layer);
   lit = mix(lit, mix(col, vec3(1., .97, .92), .45) * 1.6, tone * u_lumin * .8);
+  // HIGH FREQUENCIES: a fine, fleeting shimmer on the surface of the
+  // strands (each particle catching a little more or less light, changing
+  // several times a second), like light moving over silk
+  float fl = h1(v_s * 31.7 + floor(u_time * 9. + h1(v_s * 3.3) * 9.) * 1.618);
+  lit *= 1. + u_shimmer * (fl * fl * 2.2 - .55) * step(.5, v_layer);
   // STORMY / RESTLESS: occasional luminous accent strands
   lit += u_colAcc * v_acc * u_accent * 4.;
   o = vec4(lit * u_bright * v_a * disc, 1.);
@@ -287,6 +306,14 @@ void main(){
   };
   const MOOD_KEYS = Object.keys(MOODS);
   const SCALARS = ['density', 'thick', 'dust', 'swell', 'strands', 'curve', 'fold', 'turb', 'cross', 'instab', 'speed', 'spread', 'light', 'visible', 'trail', 'accent'];
+
+  function rgbToHsl([r, g, b]) {
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+    if (mx === mn) return [0, 0, l];
+    const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    let h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [h * 60, s, l];
+  }
 
   function hslToRgb(h, s, l) {
     h = ((h % 360) + 360) % 360 / 360; s /= 100; l /= 100;
@@ -496,12 +523,53 @@ void main(){
     update(f, dt) {
       this.idle = !!f.idle;
       const t = (this.t += dt);
-      // smoothed drivers: the waves follow phrases, not syllables
-      const lvl = f.silent ? 0 : (f.level ?? f.energy ?? 0.3);
-      this.vol = (this.vol ?? lvl) + (lvl - (this.vol ?? lvl)) * ease(dt, lvl > (this.vol ?? lvl) ? 0.9 : 2.5);
-      this.mid = (this.mid ?? 0.3) + ((f.mid ?? 0.3) - (this.mid ?? 0.3)) * ease(dt, 1.5);
-      this.high = (this.high ?? 0) + ((f.high ?? 0) - (this.high ?? 0)) * ease(dt, 1.2);
-      this.bass = (this.bass ?? 0) + ((f.bass ?? 0) - (this.bass ?? 0)) * ease(dt, 0.8);
+      // THE MUSICAL LAYERS. Each signal has its own attack and decay, matched
+      // to the part of the composition it moves. The band and loudness inputs
+      // are already measured against each track's own sustained levels (see
+      // listener.js), so differently mastered songs behave alike.
+      const follow = (key, x, up, down) => {
+        const cur = this[key] ?? x;
+        this[key] = cur + (x - cur) * ease(dt, x > cur ? up : down);
+        return this[key];
+      };
+      const on = !f.silent;
+      // dynamic intensity: luminosity, expansion, density
+      follow('vol', on ? (f.level ?? f.energy ?? 0.3) : 0, 0.9, 2.5);
+      // low: deep, slow currents (slow to build, slower to settle)
+      follow('bass', on ? (f.bass ?? 0) : 0, 0.6, 3);
+      // mid: the filaments' form, curvature and expressive movement
+      follow('mid', on ? (f.mid ?? 0.3) : 0, 0.5, 1.6);
+      // high: fleeting surface detail (quick, but not jittery)
+      follow('high', on ? (f.high ?? 0) : 0, 0.15, 0.7);
+      // HARMONIC TENSION, only where it can be read reliably: the harmony
+      // fits a triad poorly, or the chord sits far from the key on the circle
+      // of fifths; confidence fades out when the music is quiet or thin
+      const fitT = clamp((0.86 - (f.triadFit ?? 0.86)) / 0.4);
+      const k5 = ((((f.chordRoot ?? 0) - (f.tonic ?? 0)) * 7) % 12 + 12) % 12;
+      const farT = clamp((Math.min(k5, 12 - k5) - 1.5) / 3);
+      const conf = on ? clamp((f.mid ?? 0) * 2) : 0;
+      follow('tension', this.idle ? 0 : (0.7 * fitT + 0.3 * farT) * conf, 2, 3);
+      // SILENCE: builds up over a few seconds of quiet, clears quickly when
+      // the music returns
+      const hush = f.silent ? 1 : clamp(1 - (f.level ?? 0.5) * 3.5);
+      follow('quietAmt', this.idle ? 0 : hush, 3, 0.6);
+      // PERCUSSION: ripples. Onset strength is judged against this song's
+      // own typical onsets, and scaled by drive, so drums ripple clearly and
+      // a piano barely does
+      this.ripples = (this.ripples || []).filter((r) => (r.t += dt) < 4);
+      if (f.beat && on && !this.idle) {
+        const bs = f.beatStrength || 0.3;
+        this.beatAvg = (this.beatAvg ?? bs) + (bs - (this.beatAvg ?? bs)) * 0.08;
+        const rel = clamp(bs / Math.max(0.15, this.beatAvg * 1.6));
+        this.ripCool = (this.ripCool || 0);
+        if (rel > 0.55 && this.ripCool <= 0 && this.ripples.length < 4) {
+          const amp = 0.06 * rel * (0.25 + 0.75 * (this.drive ?? 0.5));
+          const sp = (this.spreadNow || 0.8) * 0.5;
+          this.ripples.push({ x: this.focus.x + rnd(-sp, sp) * this.asp, y: this.focus.y + rnd(-sp, sp) * 0.8, t: 0, a: amp });
+          this.ripCool = 0.22;
+        }
+      }
+      this.ripCool = (this.ripCool || 0) - dt;
       // fullness, as far as the visuals are concerned, needs some drive (drums)
       const hiN = clamp((Math.log10(((f.dbg && f.dbg.hi) || 0) + 1e-9) + 5) / 2.7);
       this.drive = (this.drive ?? 0.5) + (hiN - (this.drive ?? 0.5)) * ease(dt, 3);
@@ -509,6 +577,7 @@ void main(){
       this.lush = (this.lush ?? lushRaw) + (lushRaw - (this.lush ?? lushRaw)) * ease(dt, 2.5);
       this.bpm = (this.bpm ?? f.bpm ?? 90) + ((f.bpm || 90) - (this.bpm ?? 90)) * ease(dt, 6);
       this.bassPhase += dt * (0.6 + 1.6 * this.bass) * (this.M ? 0.4 + 0.6 * this.M.swell : 1);
+      this.deepPh = (this.deepPh || 0) + dt * (0.01 + 0.06 * this.bass);
       this._mood(f, dt);
       const M = this.M;
       // the waves' direction turns slowly; restless and stormy music makes it
@@ -529,14 +598,23 @@ void main(){
       this.focus.x = MB.noise3(t * 0.01, fs, 0) * 0.3 * this.asp * 0.5;
       this.focus.y = MB.noise3(fs, t * 0.01, 3) * 0.18;
 
-      // colour: the mood's own colours, tinted by the key's palette, with
-      // each chord nudging the second
+      // HARMONY: colour. The first colour family comes from the mood and the
+      // key; the second from the current chord, and how far it sits from the
+      // first follows the chord's distance from the key: chords close to
+      // home stay in a neighbouring colour, distant ones reach toward a
+      // contrasting family. Transitions are gradual.
       const pa = this._col(0, f), pb = f.chordId && !this.idle ? this._col(2, f, true) : this._col(3, f);
       const ta = M.colA.map((v, i) => 0.65 * v + 0.35 * pa[i]);
-      const tb = M.colB.map((v, i) => 0.6 * v + 0.4 * pb[i]);
+      let tb = M.colB.map((v, i) => 0.6 * v + 0.4 * pb[i]);
+      if (!this.idle && f.chordId) {
+        const dist = Math.min(k5, 12 - k5) / 6; // 0 home .. 1 farthest
+        const [h, sat, l] = rgbToHsl(ta);
+        const rel = hslToRgb(h + (f.chordQual ? 1 : -1) * (12 + 70 * dist), sat * 100, l * 100);
+        tb = tb.map((v, i) => 0.55 * v + 0.45 * rel[i]);
+      }
       this.colAcc = M.acc;
       this.colA = this.colA.map((v, i) => v + (ta[i] - v) * ease(dt, 4));
-      this.colB = this.colB.map((v, i) => v + (tb[i] - v) * ease(dt, 1.8));
+      this.colB = this.colB.map((v, i) => v + (tb[i] - v) * ease(dt, 2.5));
 
       // stars
       for (const st of this.stars) {
@@ -577,22 +655,30 @@ void main(){
       gl.uniform1f(P.u.u_time, this.t);
       gl.uniform1f(P.u.u_dt, dt);
       gl.uniform1f(P.u.u_asp, this.asp);
-      gl.uniform1f(P.u.u_freq, (1.0 + 0.25 * mid) * M.curve);    // MID + MOOD: the size of the curves
-      gl.uniform1f(P.u.u_warp, (0.55 + 0.4 * mid) * M.fold);     // MID + MOOD: how deeply they fold
-      gl.uniform1f(P.u.u_levels, (1.5 + 1.1 * lush) * M.density); // FULLNESS + MOOD: how many strands
-      gl.uniform1f(P.u.u_thick, clamp((0.08 + 0.34 * vol) * M.thick, 0.03, 0.42)); // VOLUME + MOOD: thickness
+      const tension = this.tension || 0, quiet = this.quietAmt || 0;
+      gl.uniform1f(P.u.u_freq, (1.0 + 0.3 * mid) * M.curve);     // MID + MOOD: the curvature of the filaments
+      gl.uniform1f(P.u.u_warp, (0.5 + 0.5 * mid + 0.25 * tension) * M.fold); // MID + TENSION: how they fold
+      gl.uniform1f(P.u.u_levels, (1.4 + 0.8 * lush + 0.5 * vol) * M.density); // INTENSITY + MOOD: strand density
+      gl.uniform1f(P.u.u_thick, clamp((0.08 + 0.34 * vol) * M.thick, 0.03, 0.42)); // INTENSITY + MOOD: thickness
       gl.uniform1f(P.u.u_pull, 3.5 + 2 * (1 - high));            // tighter lines when it's clean
-      // VOLUME + MOOD: speed (restless music lurches a little on strong beats)
-      gl.uniform1f(P.u.u_flow, (0.03 + 0.11 * vol + 0.03 * mid) * tempo * M.speed * (1 + 0.5 * M.instab * acc));
-      gl.uniform1f(P.u.u_dust, (0.1 + 0.25 * high) * M.dust);    // HIGHS + MOOD: dust drifting off
-      gl.uniform1f(P.u.u_turb, M.turb * (0.5 + 0.5 * vol));      // MOOD: turbulence
+      // MID + TEMPO + MOOD: the filaments' expressive movement (not volume);
+      // it softens and slows in quiet passages
+      gl.uniform1f(P.u.u_flow, (0.03 + 0.11 * mid) * tempo * M.speed * (1 + 0.5 * M.instab * acc) * (1 - 0.65 * quiet));
+      gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust); // HIGH + SILENCE: strands fray into dust
+      gl.uniform1f(P.u.u_turb, M.turb * (0.5 + 0.5 * mid) + 0.45 * tension); // MOOD + TENSION: turbulence
+      gl.uniform1f(P.u.u_deep, 0.06 + 0.32 * bass);              // LOW: deep currents displace the field
+      gl.uniform1f(P.u.u_deepPh, this.deepPh || 0);
+      gl.uniform1f(P.u.u_loosen, quiet);                         // SILENCE: lines loosen their hold
+      const rip = new Float32Array(16);
+      (this.ripples || []).slice(0, 4).forEach((r, i) => rip.set([r.x, r.y, r.t, r.a], i * 4));
+      gl.uniform4fv(P.u.u_rip, rip);                             // PERCUSSION: ripples
       gl.uniform1f(P.u.u_strands, Math.max(2, M.strands));       // MOOD: filaments or silk
-      gl.uniform1f(P.u.u_cross, M.cross);                        // MOOD: intersecting currents
+      gl.uniform1f(P.u.u_cross, Math.min(0.6, M.cross + 0.3 * tension)); // MOOD + TENSION: intersecting currents
       gl.uniform1f(P.u.u_crossAng, 1.05 + 0.4 * Math.sin(this.t * 0.02));
       gl.uniform2f(P.u.u_seedOff, (this.seedOff || [0, 0])[0], (this.seedOff || [0, 0])[1]);
-      this.spreadNow = (0.5 + 0.55 * lush + 0.2 * vol) * M.spread; // MOOD: space
+      this.spreadNow = (0.5 + 0.35 * lush + 0.35 * vol) * M.spread * (1 - 0.2 * (this.quietAmt || 0)); // INTENSITY + MOOD: expansion
       gl.uniform1f(P.u.u_spread, this.spreadNow);                // FULLNESS: how far it spreads
-      gl.uniform1f(P.u.u_bassAmp, (0.05 + 0.22 * bass) * M.swell); // BASS + MOOD: a slow swell
+      gl.uniform1f(P.u.u_bassAmp, (0.04 + 0.2 * bass) * M.swell); // LOW + MOOD: a slow swell
       gl.uniform1f(P.u.u_bassPhase, this.bassPhase);
       gl.uniform2f(P.u.u_center, this.focus.x, this.focus.y);
       gl.uniform1f(P.u.u_ang, this.ang);
@@ -627,7 +713,9 @@ void main(){
       gl.uniform3fv(P.u.u_colA, this.colA);
       gl.uniform3fv(P.u.u_colB, this.colB);
       gl.uniform3fv(P.u.u_colAcc, this.colAcc || [1, 1, 1]);
-      gl.uniform1f(P.u.u_visible, M.visible);                    // MOOD: sparseness
+      gl.uniform1f(P.u.u_visible, M.visible * (1 - 0.8 * quiet)); // MOOD + SILENCE: strands dissolve
+      gl.uniform1f(P.u.u_shimmer, this.idle ? 0.1 : 0.6 * high * (0.4 + 0.6 * (this.lumin ?? 0.2))); // HIGH: surface shimmer
+      gl.uniform1f(P.u.u_time, this.t);
       gl.uniform1f(P.u.u_lumin, this.lumin ?? 0.2);
       gl.uniform1f(P.u.u_accent, M.accent * (0.15 + 0.85 * acc) * (this.idle ? 0 : 1)); // MOOD: luminous accents
       // brightness per particle: louder is brighter; fewer particles each brighter

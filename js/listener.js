@@ -97,6 +97,7 @@
         lush: 0,
         // per-band envelopes, 0..1, and momentary events
         bass: 0, mid: 0, high: 0, bassHit: 0, spark: 0,
+        triadFit: 0.8, // how cleanly the harmony fits a triad (see _chord)
         // the lead melody (often the voice): pitch 0 = low, 1 = high
         melody: { on: false, pitch: 0.5, loud: 0, conf: 0 },
       };
@@ -317,6 +318,12 @@
         if (maj > best) { best = maj; root = r; qual = 1; }
         if (min > best) { best = min; root = r; qual = 0; }
       }
+      // How well the music fits a plain major/minor triad (chroma here sums
+      // to about 1): a clean triad scores ~0.9, clusters, suspensions and
+      // chromatic passages much lower. That gap reads as harmonic tension.
+      let total = 0;
+      for (let i = 0; i < 12; i++) total += c[i];
+      f.triadFit = total > 0 ? best / total : 0.5;
       const name = root * 2 + qual;
       if (name === this.chordCand) this.chordHold = (this.chordHold || 0) + 1;
       else { this.chordCand = name; this.chordHold = 1; }
