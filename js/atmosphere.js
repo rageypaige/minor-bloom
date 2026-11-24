@@ -438,12 +438,8 @@ void main(){
         this.forms = this.forms.filter((g) => g.age < g.span);
       }
       const k = 0.6 + 0.4 * (this.intensity ?? 0.5); // gentler songs get a gentler release
-      // the release bloom bursts open in about half a second
-      this._spawn('bloom', { at: fp, size: rnd(0.45, 0.6) * k, span: rnd(16, 24), grow: 0.5, dom: true, lumMul: 1.0 * k });
+      this._spawn('bloom', { at: fp, size: rnd(0.45, 0.6) * k, span: rnd(16, 24), grow: 1.6, dom: true, lumMul: 1.0 * k });
       for (const g of this.forms) g.billowKick += 1.2;
-      // THE HIT: a split-second inhale, then a pressure wave travels out from
-      // the centre, reaching each form in turn and pushing it outward
-      this.shock = { x: fp.x, y: fp.y, t: 0, id: (this.shockId = (this.shockId || 0) + 1), k };
       this.phase = Math.PI; // breathe out from here
       this.domCool = Math.max(this.domCool, 25);
     }
@@ -677,7 +673,6 @@ void main(){
         }
       }
 
-      if (this.shock) { this.shock.t += dt; if (this.shock.t > 4) this.shock = null; }
       const dominant = this.forms.find((x) => x.dom && x.age < x.span);
       for (const g of this.forms) {
         const K = KINDS[g.kind];
@@ -708,27 +703,6 @@ void main(){
         const sp = K.drift * (0.5 + mid * 0.8);
         g.x += (cx * sp - (g.x - this.focus.x) * pull) * dt;
         g.y += (cy * sp - (g.y - this.focus.y) * pull) * dt;
-        // the pressure wave: when it reaches this form, push it outward,
-        // swell it and send a ripple through it; then it glides to a stop
-        const sh = this.shock;
-        if (sh && g.shockId !== sh.id && K.layer === 1) {
-          const sx = g.x - sh.x, sy = g.y - sh.y, sd = Math.hypot(sx, sy) + 1e-3;
-          if (sd <= sh.t * 1.3 + 0.02) {
-            g.shockId = sh.id;
-            const hit = 0.32 * sh.k * Math.exp(-sd * 0.7);
-            g.vx = (g.vx || 0) + (sx / sd) * hit;
-            g.vy = (g.vy || 0) + (sy / sd) * hit;
-            g.kickTarget = 1;
-            g.rip = 0;
-            g.ripAmp = Math.max(g.ripAmp, 0.09);
-          }
-        }
-        g.x += (g.vx || 0) * dt;
-        g.y += (g.vy || 0) * dt;
-        g.vx = (g.vx || 0) * Math.exp(-dt / 0.9);
-        g.vy = (g.vy || 0) * Math.exp(-dt / 0.9);
-        g.kick = (g.kick || 0) + ((g.kickTarget || 0) - (g.kick || 0)) * ease(dt, 0.12);
-        g.kickTarget = (g.kickTarget || 0) * Math.exp(-dt / 1.3);
         // veils lie along the current
         // remember which way the current carries it (tendrils trail that way)
         const fa = Math.atan2(cy, cx);
@@ -841,9 +815,6 @@ void main(){
       const up = this.up || 0, quiet = this.quiet ?? 0.5;
       const tension = this.tension || 0, release = this.release || 0;
       const intensity = this.intensity ?? 0.5;
-      // the inhale: in the first instant of a drop, everything pulls in
-      const st = this.shock ? this.shock.t : 9;
-      const inhale = 1 - 0.12 * Math.exp(-Math.pow((st - 0.07) / 0.06, 2));
       const sizeK = this.idle ? 0.95 : 0.62 + 0.38 * intensity;   // gentle songs: smaller forms
       const lightK = this.idle ? 1.7 : 0.5 + 0.5 * intensity;    // gentle songs: softer light
       // breathing, a little deeper when the music is fuller
@@ -859,8 +830,7 @@ void main(){
         const fresh = 0.75 + 0.5 * Math.exp(-g.age / (g.growTau * 3));
         let lum = far
           ? (0.016 + 0.026 * vol + 0.016 * lush) * lightK
-          : K.lum * g.lumMul * (0.07 + 0.42 * vol + 0.2 * up) * fresh * share * (g.dim ?? 1) * lightK
-            * (1 - 0.25 * tension); // a build holds its breath: the light dims a little
+          : K.lum * g.lumMul * (0.07 + 0.42 * vol + 0.2 * up) * fresh * share * (g.dim ?? 1) * lightK;
         // SMALLER, NOT DIMMER: a midground form that would be faint shrinks
         // and keeps enough light to read as a soft glow, instead of a wide,
         // faint smudge. Its total light stays about the same.
@@ -872,8 +842,7 @@ void main(){
         const shrink = 1 - 0.48 * faint;
         if (!far) lum = Math.min(Math.max(lum, L0 * 0.8), lum / (shrink * shrink));
         let scale = g.size * (far ? 1 : sizeK) * (0.15 + 0.85 * Math.min(g.grow, 1.4)) * (0.78 + 0.45 * vol) * (1 + 0.28 * g.swell)
-          * (1 - 0.28 * tension + 0.15 * release) * (1 + 0.06 * b) * shrink
-          * inhale * (1 + 0.3 * (g.kick || 0));
+          * (1 - 0.18 * tension + 0.15 * release) * (1 + 0.06 * b) * shrink;
         const stretch = g.aspect * (1 + mid * 0.3 * Math.sin(g.seed + this.t * 0.07));
         // BASS: larger forms are gently pushed away from the centre of focus
         const dx = g.x - this.focus.x, dy = g.y - this.focus.y, dl = Math.hypot(dx, dy) + 0.05;
@@ -965,7 +934,7 @@ void main(){
       gl.uniform2f(P.u.u_res, this.c.width, this.c.height);
       gl.uniform1f(P.u.u_time, this.t);
       gl.uniform1f(P.u.u_exposure, 1.1 + 0.42 * (this.intensity ?? 0.5) + 0.15 * (this.up || 0) + 0.15 * (this.release || 0));
-      gl.uniform1f(P.u.u_vig, clamp(0.12 + 0.75 * (this.tension || 0) - 0.12 * (this.release || 0), 0, 0.85));
+      gl.uniform1f(P.u.u_vig, clamp(0.12 + 0.6 * (this.tension || 0) - 0.12 * (this.release || 0), 0, 0.8));
       gl.uniform1f(P.u.u_traceMix, 0.4);
       const base = [0.034, 0.034, 0.042].map((v, i) => v + this.tint[i] * 0.03);
       gl.uniform3fv(P.u.u_base, base);
