@@ -52,6 +52,27 @@ const mat2 ROT = mat2(.8, .6, -.6, .8);
 float fbm(vec2 p){ float s = 0., a = .5; for (int i = 0; i < 4; i++) { s += a * noise(p); p = ROT * p * 2.07 + vec2(1.7, 9.2); a *= .5; } return s; }
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }`;
 
+  // SOFT COMPOSITIONAL GUIDANCE (?style=ribbons, the "hybrid"). The original
+  // simulation below runs unchanged; guidance is an extra layer on top:
+  //  - a guide curve y = gY(x), three layered sines whose amplitudes and
+  //    phases evolve on slow / medium / bass-driven timescales;
+  //  - the wave field rises with distance FROM that curve (instead of
+  //    straight up), so filaments run along the gesture but still fold,
+  //    curl and stretch with the noise;
+  //  - a soft restoring force inside a band around the curve: particles move
+  //    freely within it and are drawn back gently when they stray;
+  //  - a travelling pinch along the curve makes the ribbon narrow, twist
+  //    and widen, catching more light where it folds.
+  const GUIDE_FN = `
+uniform float u_guide, u_gBand, u_gPull, u_gWarp, u_gSwell;
+uniform vec3 u_gA, u_gK, u_gPh, u_gTw;
+float gY(float x){ return u_gA.x * sin(u_gK.x * x + u_gPh.x) + u_gA.y * sin(u_gK.y * x + u_gPh.y) + u_gA.z * sin(u_gK.z * x + u_gPh.z); }
+float gDY(float x){ return u_gA.x * u_gK.x * cos(u_gK.x * x + u_gPh.x) + u_gA.y * u_gK.y * cos(u_gK.y * x + u_gPh.y) + u_gA.z * u_gK.z * cos(u_gK.z * x + u_gPh.z); }
+// signed distance from the guide (approximate), in the guide's frame
+float gDist(vec2 r){ float sl = gDY(r.x); return (r.y - gY(r.x)) / sqrt(1. + sl * sl); }
+// 1 = full width; smaller where the ribbon pinches and turns over
+float gPinch(float x){ return mix(1., .32 + .68 * abs(cos(u_gTw.y * x + u_gTw.z)), u_gTw.x); }`;
+
   // 1. Move every particle.
   const SIM = `#version 300 es
 precision highp float;
@@ -62,6 +83,7 @@ uniform vec2 u_center, u_seedOff; uniform float u_ang, u_thick, u_cross, u_cross
 uniform vec4 u_rip[4];
 out vec4 o;
 ${NOISE}
+${GUIDE_FN}
 // Long wave lines that run across the screen (not closed loops): the field
 // rises steadily in one direction, and noise bends the lines into waves.
 float field(vec2 p, float ang, vec2 off){
@@ -76,7 +98,18 @@ float field(vec2 p, float ang, vec2 off){
           + .5 * fbm(q * 1.1 + vec2(-u_time * .025, 8.3) + fbm(q * .4 + 3.1));
   // a slow swell rolling along them (bass)
   float swell = u_bassAmp * sin(r.x * 2.2 + u_bassPhase);
-  return r.y * u_freq * .9 + u_warp * w + swell;
+  float rise = r.y;
+  if (u_guide > .5) {
+    // guided: rise with distance from the guide curve, compressed where it
+    // pinches (so the ribbon narrows and turns over there)
+    vec2 rg = mat2(ca, sa, -sa, ca) * (p - u_center);
+    rise = gDist(rg) / gPinch(rg.x);
+  }
+  // (guided: the noise folds filaments WITHIN the gesture rather than
+  // displacing whole lines away from it; the large-scale motion comes from
+  // the guide itself, which keeps both forces in agreement)
+  float gw = u_guide > .5 ? u_gWarp : 1., gs = u_guide > .5 ? u_gSwell : 1.;
+  return rise * u_freq * .9 + u_warp * w * gw + swell * gs;
 }
 float life(float seed){ return 5. + 9. * h1(seed * 3.1); }
 void main(){
@@ -97,7 +130,7 @@ void main(){
   // clear gaps between them (fine filaments); other moods have many, which
   // blend into a silky ribbon.
   float lane = (floor(h1(seed * 4.3) * u_strands) + .5) / u_strands - .5;
-  float d = fract(n * u_levels + lane * u_thick) - .5;
+  float d = fract(n * u_levels + lane * u_thick + .5 * u_guide) - .5;
   vec2 toLine = (-d / u_levels) * g / g2;
   // ...and streaming along it
   // half the particles flow each way along the waves, so the light builds
@@ -124,6 +157,17 @@ void main(){
     vec2 eddy = vec2(fbm(tq + vec2(u_time * .21, 0.)), fbm(tq + vec2(5.2, -u_time * .19))) - .47;
     v += eddy * u_turb * .55;
   }
+  // GUIDANCE: free inside the band around the guide; outside it, a soft
+  // force draws particles back toward the composition
+  if (u_guide > .5) {
+    float ca = cos(u_ang), sa = sin(u_ang);
+    mat2 Rm = mat2(ca, sa, -sa, ca);
+    vec2 rg = Rm * (p - u_center);
+    float gd = gDist(rg);
+    float ex = clamp(gd - clamp(gd, -u_gBand, u_gBand), -.3, .3);
+    vec2 nR = normalize(vec2(-gDY(rg.x), 1.));
+    v -= transpose(Rm) * nR * ex * u_gPull;
+  }
   // the waves spread out as the music fills out, and gather when it's sparse
   vec2 c = p - u_center;
   vec2 cn = abs(c / vec2(u_spread * u_asp * .6, u_spread * .6));
@@ -137,113 +181,16 @@ void main(){
     // reborn anywhere inside the current spread, evenly
     vec2 j = vec2(h1(seed + u_time * 1.3), h1(seed * 1.7 + u_time)) * 2. - 1.;
     p = u_center + j * vec2(u_spread * u_asp * .6, u_spread * .6) * .95;
+    if (u_guide > .5) {
+      // guided: reborn along the gesture, within its band
+      float ca = cos(u_ang), sa = sin(u_ang);
+      float rx = j.x * u_spread * u_asp * .6;
+      vec2 rg = vec2(rx, gY(rx) + j.y * u_gBand * .8);
+      p = u_center + transpose(mat2(ca, sa, -sa, ca)) * rg;
+    }
     age = 0.;
   }
   o = vec4(p, age, seed);
-}`;
-
-  // ===================== EXPERIMENTAL: GUIDED RIBBONS =====================
-  // (?style=ribbons) A composition-driven alternative to the noise-contour
-  // SIM above. Three persistent cubic Bezier guide curves (one dominant, two
-  // subordinates derived from it) are computed on the CPU each frame and
-  // passed as uniforms. The particle state texture keeps its RGBA32F layout,
-  // reinterpreted as:  R = u (position along the ribbon, 0..1),
-  //                    G = age (s), B = life (s), A = seed.
-  // Ribbon identity and transverse offset are pure functions of the seed,
-  // so they never change. Screen positions are not stored: the point shader
-  // evaluates curve(u) + normal * offset every frame, so particles stay on
-  // their curve and follow it continuously as it deforms.
-  const GUIDE_COMMON = `
-uniform vec2 u_P[12];     // 3 curves x 4 control points (dominant first)
-uniform float u_W[3];     // ribbon half-widths
-uniform float u_gtime, u_twist;
-uniform vec4 u_grip[4];   // rhythm waves: (ribbon, u start, age s, amplitude)
-float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
-int ribbonOf(float seed){ float h = h1(seed * 2.13); return h < .6 ? 0 : (h < .8 ? 1 : 2); }
-vec2 bez(int k, float u){
-  vec2 a = u_P[k * 4], b = u_P[k * 4 + 1], c = u_P[k * 4 + 2], d = u_P[k * 4 + 3];
-  float m = 1. - u;
-  return m * m * m * a + 3. * m * m * u * b + 3. * m * u * u * c + u * u * u * d;
-}
-vec2 bezD(int k, float u){
-  vec2 a = u_P[k * 4], b = u_P[k * 4 + 1], c = u_P[k * 4 + 2], d = u_P[k * 4 + 3];
-  float m = 1. - u;
-  return 3. * m * m * (b - a) + 6. * m * u * (c - b) + 3. * u * u * (d - c);
-}`;
-
-  // Advance each particle along its own ribbon; respawn on the same ribbon.
-  const SIM_GUIDE = `#version 300 es
-precision highp float;
-uniform sampler2D u_state;
-uniform float u_dt, u_flow, u_time;
-out vec4 o;
-float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
-void main(){
-  vec4 s = texelFetch(u_state, ivec2(gl_FragCoord.xy), 0);
-  float u = s.x, age = s.y, life = s.z, seed = s.w;
-  // per-particle speed variation; background layer drifts slower (parallax)
-  float sp = u_flow * (.8 + .4 * h1(seed * 3.7)) * (h1(seed * 6.1) < .45 ? .6 : 1.);
-  u += sp * u_dt;
-  age += u_dt;
-  if (age > life || u > 1.03) {
-    // reborn somewhere along the SAME ribbon, same lane; fades in from age 0
-    u = h1(seed * 1.3 + u_time * .731) * .98;
-    age = 0.;
-    life = 6. + 8. * h1(seed * 9.1 + u_time * .17);
-  }
-  o = vec4(u, age, life, seed);
-}`;
-
-  const PTS_GUIDE_VS = `#version 300 es
-precision highp float;
-uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_visible, u_subLight, u_lanes, u_jit, u_dust;
-${GUIDE_COMMON}
-out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp;
-void main(){
-  ivec2 ij = ivec2(gl_VertexID % u_w, gl_VertexID / u_w);
-  vec4 s = texelFetch(u_state, ij, 0);
-  float u = s.x, age = s.y, life = s.z, seed = s.w;
-  int k = ribbonOf(seed);
-  vec2 B = bez(k, u);
-  vec2 T = normalize(bezD(k, u) + vec2(1e-5, 0.));
-  vec2 N = vec2(-T.y, T.x);
-  // a fixed lane across the ribbon: layered filaments with controlled spacing
-  float lane = (floor(h1(seed * 4.3) * u_lanes) + .5) / u_lanes - .5;
-  lane += (h1(seed * 7.9) - .5) * u_jit / u_lanes;
-  // a few particles drift a little further out as fine dust (still bounded)
-  lane += step(1. - u_dust, h1(seed * 7.7)) * (h1(seed * 5.5) - .5) * .5;
-  lane = clamp(lane, -.75, .75);
-  // the ribbon slowly turns over itself (bounded: it never fully collapses)
-  float twist = cos(u_twist * sin(u * 2.4 + u_gtime * .035 + float(k) * 1.7));
-  // gentle per-filament undulation along the length
-  float und = .05 * sin(u * 9. + u_gtime * .22 + h1(seed * 4.3) * 6.2832) * (.5 + .5 * h1(seed * 2.7));
-  // ribbons thin toward their ends
-  float taper = .35 + .65 * pow(sin(3.14159 * clamp(u, 0., 1.)), .6);
-  float off = (lane * 2. * twist + und) * u_W[k] * taper;
-  // RHYTHM: small waves travelling along the ribbon
-  for (int i = 0; i < 4; i++) {
-    vec4 R = u_grip[i];
-    if (R.w <= 0. || int(R.x + .5) != k) continue;
-    float d = u - (R.y + R.z * .16);
-    off += R.w * exp(-d * d / .0016) * sin(d * 120.) * exp(-R.z * .8);
-  }
-  vec2 pos = B + N * off;
-  v_a = smoothstep(0., 2., age) * (1. - smoothstep(life - 2., life, age))
-      * smoothstep(-.02, .06, u) * (1. - smoothstep(.94, 1.02, u));
-  v_a *= step(h1(seed * 2.9), u_visible);
-  v_a *= k == 0 ? 1. : u_subLight;
-  v_s = seed;
-  v_acc = step(h1(seed * 13.7), .035);
-  // DEPTH, as in the original renderer
-  float lh = h1(seed * 6.1);
-  float layer = lh < .45 ? 0. : lh < .87 ? 1. : 2.;
-  v_layer = layer;
-  pos *= layer == 0. ? .96 : layer == 2. ? 1.02 : 1.;
-  float size = layer == 0. ? .75 : layer == 2. ? 1.35 : 1.;
-  v_sharp = layer == 0. ? 0. : layer == 2. ? 1. : .55;
-  v_a *= layer == 0. ? .45 : layer == 2. ? 1.15 : 1.;
-  gl_Position = vec4(pos.x / (u_asp * .5), pos.y / .5, 0., 1.);
-  gl_PointSize = u_size * size * (.7 + .6 * h1(seed * 5.3));
 }`;
 
   // 2a. Fade the trails a little each frame.
@@ -256,7 +203,8 @@ void main(){ o = vec4(texture(u_prev, gl_FragCoord.xy / u_res).rgb * u_keep, 1.)
   // 2b. Draw the particles as points of light.
   const PTS_VS = `#version 300 es
 precision highp float;
-uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_spread, u_visible;
+uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_spread, u_visible, u_ang;
+${GUIDE_FN}
 uniform vec2 u_center;
 out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp;
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
@@ -270,6 +218,14 @@ void main(){
   float r = pow(pow(cn.x, 4.) + pow(cn.y, 4.), .25);
   v_a *= 1. - smoothstep(.7, 1.1, r);
   v_s = s.w;
+  if (u_guide > .5) {
+    // the core of the gesture is brightest; filaments that wander out from
+    // it are fainter; where the ribbon pinches and folds it catches light
+    float ca = cos(u_ang), sa = sin(u_ang);
+    vec2 rg = mat2(ca, sa, -sa, ca) * (s.xy - u_center);
+    float gd = gDist(rg) / (u_gBand * .8);
+    v_a *= (.3 + .7 * exp(-gd * gd)) * (1. + .7 * (1. - gPinch(rg.x)));
+  }
   // TENDER: only some particles are drawn, so the filaments are sparse
   v_a *= step(h1(s.w * 2.9), u_visible);
   v_acc = step(h1(s.w * 13.7), .035); // a few particles can carry luminous accents
@@ -377,34 +333,21 @@ void main(){
   o = vec4(col, 1.);
 }`;
 
-  // Tuning for the experimental guided-ribbon mode (?style=ribbons).
-  // Coordinates: x spans about -asp/2..asp/2, y spans -0.5..0.5.
+  // Tuning for the soft guidance (?style=ribbons). Distances are in screen
+  // heights. Three timescales: slow (the main sweep), medium (folds and the
+  // travelling pinch, driven by mids/energy) and bass (a rolling swell).
   const GUIDE = {
-    // composition: the dominant curve's base control points (x in units of
-    // the screen's aspect, y in screen heights). A long, low-to-high sweep.
-    base: [[-0.66, -0.2], [-0.18, 0.6], [0.2, -0.58], [0.66, 0.18]],
-    subOffset: [0.2, 0.24],   // how far the two subordinates sit above/below
-    subSpread: [1.25, 0.55, 0.55, 1.25], // per control point: close mid-screen, fanning out at the edges
-    subFlatten: 0.8,          // subordinates echo the dominant curve, flatter
-    subWidth: 0.55,           // subordinate width relative to the dominant
-    subLight: 0.25, subLightTexture: 0.35, // subordinate brightness (+ with texture)
-    // slow, low-frequency drift of the control points (no independent structures)
-    driftX: 0.05, driftY: 0.09, driftSpeed: 0.012,
-    tauShape: 2.5,            // s: how quickly control points glide to targets
-    // ribbon body
-    width: 0.06, widthVolume: 0.06, // half-width, + volume
-    lanes: 22, laneJitter: 0.35, // filaments across a ribbon, and their looseness
-    twist: 0.5, twistTension: 0.55, // slow turning-over of the ribbon (bounded)
-    dust: 0.04, dustHigh: 0.08, // bounded stray fibres (+ highs)
-    visible: 0.55,            // share of particles drawn
-    flow: 0.03, flowMid: 0.09, // travel speed along ribbons (+ midrange)
-    // music -> structure (all bounded; smoothed by the taus below)
-    bassSwayX: 0.035, bassSwayY: 0.06, // whole structure sways with bass
-    midDeformX: 0.05, midDeformY: 0.09, // inner control points bend with mids
-    volExpand: 0.15,          // modest vertical expansion with volume
-    tensionCurve: 0.3,        // extra curvature with harmonic tension
-    rippleAmp: 0.018,         // rhythm waves along the ribbons
-    tauVolume: 3, tauMid: 4, tauBass: 3, tauTension: 6, tauTexture: 6,
+    // (speeds are kept below what the particles can follow, so the gesture
+    // bends and travels without tearing apart)
+    sweepAmp: 0.17, sweepAmpVol: 0.05, sweepCycles: 1.0, sweepSpeed: 0.04, sweepSpeedEnergy: 0.04,
+    foldAmp: 0.04, foldAmpMid: 0.09, foldK: 2.1, foldSpeed: 0.08, foldSpeedMid: 0.22,
+    rollAmp: 0.025, rollAmpBass: 0.1, rollK: 0.6, rollSpeed: 0.3,
+    pinch: 0.5, pinchTension: 0.25, pinchK: 1.3, pinchSpeed: 0.08, pinchSpeedEnergy: 0.15,
+    turb: 0.5,          // share of the original eddy turbulence kept
+    band: 0.12, bandLush: 0.08, bandVol: 0.06, // free-movement band around the guide
+    warp: 0.3, swell: 0.4, // share of the original noise warp / bass swell kept inside the band
+    pull: 1.2,          // strength of the soft restoring force outside the band
+    wander: 0.35,       // how much of the original directional wander remains
   };
 
   // Colour families by tonal temperature. They share a similar lightness on
@@ -435,7 +378,7 @@ void main(){
   class Waves {
     constructor(canvas, opts = {}) {
       this.c = canvas;
-      // 'guides' = experimental composition-driven ribbons (?style=ribbons)
+      // 'guides': the original simulation plus soft compositional guidance
       this.guides = opts.mode === 'guides';
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
@@ -445,10 +388,6 @@ void main(){
       this.pPts = this._prog(PTS_VS, PTS_FS);
       this.pOut = this._prog(QUAD_VS, OUT);
       this.pGlow = this._prog(QUAD_VS, GLOW);
-      if (this.guides) {
-        this.pSimG = this._prog(QUAD_VS, SIM_GUIDE);
-        this.pPtsG = this._prog(PTS_GUIDE_VS, PTS_FS);
-      }
       this.quad = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -535,15 +474,7 @@ void main(){
       this.songT = 0;
       const n = this.PW * this.PH;
       const data = new Float32Array(n * 4);
-      this.gP = null; // guide control points re-settle from their base shape
-      this.gRip = [];
-      for (let i = 0; i < n && this.guides; i++) {
-        data[i * 4] = Math.random();          // u along the ribbon
-        data[i * 4 + 1] = Math.random() * 8;  // age, staggered
-        data[i * 4 + 2] = 6 + Math.random() * 8; // life
-        data[i * 4 + 3] = Math.random() * 1000; // seed
-      }
-      for (let i = 0; i < n && !this.guides; i++) {
+      for (let i = 0; i < n; i++) {
         const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 0.35;
         data[i * 4] = Math.cos(a) * r * this.asp;
         data[i * 4 + 1] = Math.sin(a) * r;
@@ -659,7 +590,7 @@ void main(){
 
       // the key seeds the shape of the wave field, so a song returns to a
       // similar landscape (moves smoothly if the key estimate changes)
-      if (!this.idle && f.tonic !== undefined) {
+      if (!this.idle && f.tonic !== undefined && !this.guides) {
         const tx = (f.tonic || 0) * 2.37 + (f.keyMode > 0.5 ? 0 : 7.1), ty = (f.tonic || 0) * 1.13;
         this.seedOff = this.seedOff || [tx, ty];
         this.seedOff[0] += (tx - this.seedOff[0]) * ease(dt, 10);
@@ -667,54 +598,44 @@ void main(){
       }
     }
 
-    // ---------- EXPERIMENTAL: guide curves (all tuning lives in GUIDE) ----------
-    // Structural values follow their inputs slowly (seconds); luminosity is
-    // handled elsewhere and responds faster, so light leads and form follows.
-    _guideUpdate(dt) {
-      const G = GUIDE, D = this.dims || {}, a = this.asp, t = this.t, sd = this.focus.seed;
-      const N = MB.noise3;
-      const slow = (key, x, tau) => { const c = this[key] ?? x; this[key] = c + (x - c) * ease(dt, tau); return this[key]; };
-      const vol = slow('gVol', this.idle ? 0.3 : (this.vol ?? 0.3), G.tauVolume);
-      const mid = slow('gMid', this.idle ? 0.25 : (this.mid ?? 0.3), G.tauMid);
-      const bass = slow('gBass', this.idle ? 0.1 : (this.bass ?? 0), G.tauBass);
-      const ten = slow('gTen', this.idle ? 0 : (this.tension ?? 0), G.tauTension);
-      const tex = slow('gTex', this.idle ? 0.3 : (D.texture ?? 0.3), G.tauTexture);
-      // BASS: the whole structure sways slowly as one
-      this.gPh = (this.gPh || 0) + dt * (0.2 + 0.5 * bass);
-      const sway = [G.bassSwayX * bass * a * Math.sin(this.gPh), G.bassSwayY * bass * Math.sin(this.gPh * 0.7 + 1)];
-      // VOLUME: modest expansion; TENSION: bounded extra curvature
-      const amp = (1 + G.volExpand * vol) * (1 + G.tensionCurve * ten);
-      const dom = G.base.map(([bx, by], i) => {
-        const inner = i === 1 || i === 2;
-        let x = bx * a + G.driftX * a * N(t * G.driftSpeed, i * 1.9, sd);
-        let y = by * amp + G.driftY * N(i * 2.3, t * G.driftSpeed * 0.85, sd + 3);
-        // MID: subtle deformation of the inner control points
-        if (inner) {
-          x += G.midDeformX * a * mid * N(t * 0.04, i + 7, sd);
-          y += G.midDeformY * mid * N(i + 11, t * 0.045, sd);
-        }
-        return [x + sway[0], clamp(y + sway[1], -0.7, 0.7)];
-      });
-      // two subordinate curves, derived from the dominant one
-      const pts = dom.slice();
-      for (const [j, side] of [[1, 1], [2, -1]]) {
-        const shift = G.subOffset[j - 1] + 0.04 * N(t * 0.01, j * 5, sd);
-        for (let i = 0; i < 4; i++) {
-          const [x, y] = dom[i];
-          pts.push([x + 0.04 * a * N(t * 0.017, i + j * 13, sd), clamp(y * G.subFlatten + side * shift * G.subSpread[i] + 0.05 * N(i + j * 17, t * 0.015, sd), -0.62, 0.62)]);
-        }
-      }
-      // control points glide toward their targets: no jumps, ever
-      if (!this.gP) this.gP = pts.map((p) => p.slice());
-      for (let i = 0; i < 12; i++) for (let c = 0; c < 2; c++) this.gP[i][c] += (pts[i][c] - this.gP[i][c]) * ease(dt, G.tauShape);
-      // VOLUME: ribbon width
-      const w0 = G.width + G.widthVolume * vol;
-      this.gW = [w0, w0 * G.subWidth, w0 * G.subWidth * 0.92];
-      // TEXTURE (slow): how present the subordinates are; their count never changes
-      this.gSub = G.subLight + G.subLightTexture * tex;
-      this.gTwist = G.twist + G.twistTension * ten;
-      // RHYTHM: waves travel along existing ribbons
-      this.gRip = (this.gRip || []).filter((r) => (r.t += dt) < 5);
+    // The guide curve's parameters, on three timescales. Uses the same
+    // smoothed signals as the original renderer (no extra smoothing).
+    _guideStep(dt) {
+      const G = GUIDE, t = this.t, sd = this.focus.seed, N = MB.noise3;
+      const vol = this.vol ?? 0.3, mid = this.mid ?? 0.3, bass = this.bass ?? 0;
+      const E = this.dims ? this.dims.energy : 0.3, T = this.tension || 0, lush = this.lush ?? 0.3;
+      const k1 = (Math.PI * 2 * G.sweepCycles) / Math.max(1, this.asp);
+      const g = (this.g = this.g || { ph: [rnd(0, 6), rnd(0, 6), 0], tw: rnd(0, 6) });
+      // slow: the main sweep evolves and breathes
+      g.ph[0] += dt * (G.sweepSpeed + G.sweepSpeedEnergy * E);
+      g.A = [
+        G.sweepAmp * (1 + 0.35 * N(t * 0.02, sd, 1)) + G.sweepAmpVol * vol,
+        // medium: folds that travel along it, shaped by the midrange
+        G.foldAmp + G.foldAmpMid * mid,
+        // bass: a rolling swell through the whole composition
+        G.rollAmp + G.rollAmpBass * bass,
+      ];
+      g.ph[1] += dt * (G.foldSpeed + G.foldSpeedMid * mid);
+      g.ph[2] = this.bassPhase * G.rollSpeed;
+      g.K = [k1, k1 * G.foldK, k1 * G.rollK];
+      // medium: the travelling pinch where the ribbon narrows and turns over
+      g.tw += dt * (G.pinchSpeed + G.pinchSpeedEnergy * E);
+      g.Tw = [clamp(G.pinch + G.pinchTension * T, 0, 0.9), k1 * G.pinchK, g.tw];
+      g.band = G.band + G.bandLush * lush + G.bandVol * vol;
+    }
+    _gY(x) { const g = this.g; return g.A[0] * Math.sin(g.K[0] * x + g.ph[0]) + g.A[1] * Math.sin(g.K[1] * x + g.ph[1]) + g.A[2] * Math.sin(g.K[2] * x + g.ph[2]); }
+    _setGuide(P) {
+      const gl = this.gl, g = this.g;
+      gl.uniform1f(P.u.u_guide, this.guides && g ? 1 : 0);
+      if (!this.guides || !g) return;
+      gl.uniform3f(P.u.u_gA, g.A[0], g.A[1], g.A[2]);
+      gl.uniform3f(P.u.u_gK, g.K[0], g.K[1], g.K[2]);
+      gl.uniform3f(P.u.u_gPh, g.ph[0], g.ph[1], g.ph[2]);
+      gl.uniform3f(P.u.u_gTw, g.Tw[0], g.Tw[1], g.Tw[2]);
+      gl.uniform1f(P.u.u_gBand, g.band);
+      gl.uniform1f(P.u.u_gPull, GUIDE.pull);
+      gl.uniform1f(P.u.u_gWarp, GUIDE.warp);
+      gl.uniform1f(P.u.u_gSwell, GUIDE.swell);
     }
 
     update(f, dt) {
@@ -764,13 +685,12 @@ void main(){
         const R = this.dims ? this.dims.rhythm : 0.3;
         if (rel > 0.85 - 0.45 * R && this.ripCool <= 0 && this.ripples.length < 4) {
           const amp = 0.07 * rel * (0.12 + 0.88 * R);
-          if (this.guides) {
-            // starts along a ribbon (mostly the dominant one) and travels along it
-            const k = Math.random() < 0.7 ? 0 : Math.random() < 0.5 ? 1 : 2;
-            this.gRip = this.gRip || [];
-            if (this.gRip.length < 4) this.gRip.push({ k, u: rnd(0.05, 0.45), t: 0, a: GUIDE.rippleAmp * rel * (0.12 + 0.88 * R) });
+          const sp = (this.spreadNow || 0.8) * 0.5;
+          if (this.guides && this.g) {
+            // guided: start on the gesture, so the wave travels through it
+            const rx = rnd(-sp, sp) * this.asp, ry = this._gY(rx), ca = Math.cos(this.ang), sa = Math.sin(this.ang);
+            this.ripples.push({ x: this.focus.x + ca * rx + sa * ry, y: this.focus.y - sa * rx + ca * ry, t: 0, a: amp });
           } else {
-            const sp = (this.spreadNow || 0.8) * 0.5;
             this.ripples.push({ x: this.focus.x + rnd(-sp, sp) * this.asp, y: this.focus.y + rnd(-sp, sp) * 0.8, t: 0, a: amp });
           }
           this.ripCool = 0.25 + 2.5 * (1 - R) * (1 - R);
@@ -791,6 +711,10 @@ void main(){
       // wander and change course irregularly
       const wander = MB.noise3((this.evolveT ?? t) * (0.012 + 0.05 * M.instab), this.focus.seed, 7.7);
       this.ang = 0.3 * Math.sin(t * 0.013 + this.focus.seed) + 0.9 * M.instab * wander;
+      if (this.guides) {
+        this.ang *= GUIDE.wander;
+        this._guideStep(dt);
+      }
       // LUMINOSITY follows energy (and a little texture and rhythm), not the
       // key: quiet, intimate music stays restrained however deep its feeling
       const Dm = this.dims;
@@ -848,7 +772,6 @@ void main(){
         if (st) st.glint = Math.min(1, st.glint + 0.8);
       }
 
-      if (this.guides) this._guideUpdate(dt);
       this.render(f, dt);
     }
 
@@ -861,39 +784,15 @@ void main(){
       const acc = this.acc || 0;
       gl.disable(gl.BLEND);
 
-      const quietG = this.quietAmt || 0;
-      let P;
-      if (this.guides) {
-        // 1. (guides) advance particles along their ribbons
-        const [gIn, gOut] = this.state;
-        gl.bindVertexArray(null);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
-        gl.enableVertexAttribArray(0);
-        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, gOut.fb);
-        gl.viewport(0, 0, this.PW, this.PH);
-        const PG = this.pSimG;
-        gl.useProgram(PG.p);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, gIn.tex);
-        gl.uniform1i(PG.u.u_state, 0);
-        gl.uniform1f(PG.u.u_dt, dt);
-        gl.uniform1f(PG.u.u_time, this.t);
-        // MID + TEMPO: speed along the ribbon (slows in quiet passages)
-        gl.uniform1f(PG.u.u_flow, (GUIDE.flow + GUIDE.flowMid * (this.gMid ?? mid)) * tempo * (1 - 0.65 * quietG) / (1.35 * this.asp));
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-        this.state = [gOut, gIn];
-      }
       // 1. simulate
-      const [sIn, sOut] = this.guides ? [this.state[0], this.state[0]] : this.state;
-      if (!this.guides) {
+      const [sIn, sOut] = this.state;
       gl.bindVertexArray(null);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
       gl.enableVertexAttribArray(0);
       gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
       gl.bindFramebuffer(gl.FRAMEBUFFER, sOut.fb);
       gl.viewport(0, 0, this.PW, this.PH);
-      P = this.pSim;
+      let P = this.pSim;
       gl.useProgram(P.p);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, sIn.tex);
@@ -912,7 +811,7 @@ void main(){
       // it softens and slows in quiet passages
       gl.uniform1f(P.u.u_flow, (0.03 + 0.11 * mid) * tempo * M.speed * (1 + 0.5 * M.instab * acc) * (1 - 0.65 * quiet));
       gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust); // HIGH + SILENCE: strands fray into dust
-      gl.uniform1f(P.u.u_turb, M.turb * (0.5 + 0.5 * mid) + 0.45 * tension); // MOOD + TENSION: turbulence
+      gl.uniform1f(P.u.u_turb, (M.turb * (0.5 + 0.5 * mid) + 0.45 * tension) * (this.guides ? GUIDE.turb : 1)); // MOOD + TENSION: turbulence
       gl.uniform1f(P.u.u_deep, 0.06 + 0.32 * bass);              // LOW: deep currents displace the field
       gl.uniform1f(P.u.u_deepPh, this.deepPh || 0);
       gl.uniform1f(P.u.u_loosen, quiet);                         // SILENCE: lines loosen their hold
@@ -920,7 +819,8 @@ void main(){
       (this.ripples || []).slice(0, 4).forEach((r, i) => rip.set([r.x, r.y, r.t, r.a], i * 4));
       gl.uniform4fv(P.u.u_rip, rip);                             // PERCUSSION: ripples
       gl.uniform1f(P.u.u_strands, Math.max(2, M.strands));       // MOOD: filaments or silk
-      gl.uniform1f(P.u.u_cross, Math.min(0.6, M.cross + 0.3 * tension)); // MOOD + TENSION: intersecting currents
+      // (guided: no independent crossing currents)
+      gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension)); // MOOD + TENSION: intersecting currents
       gl.uniform1f(P.u.u_crossAng, 1.05 + 0.4 * Math.sin(this.t * 0.02));
       gl.uniform2f(P.u.u_seedOff, (this.seedOff || [0, 0])[0], (this.seedOff || [0, 0])[1]);
       this.spreadNow = (0.5 + 0.35 * lush + 0.35 * vol) * M.spread * (1 - 0.2 * (this.quietAmt || 0)); // INTENSITY + MOOD: expansion
@@ -929,9 +829,9 @@ void main(){
       gl.uniform1f(P.u.u_bassPhase, this.bassPhase);
       gl.uniform2f(P.u.u_center, this.focus.x, this.focus.y);
       gl.uniform1f(P.u.u_ang, this.ang);
+      this._setGuide(P);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       this.state = [sOut, sIn];
-      }
 
       // 2. trails: fade the light a little, then draw particles on top
       const [lIn, lOut] = this.light;
@@ -949,33 +849,21 @@ void main(){
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.bindVertexArray(this.vao);
-      P = this.guides ? this.pPtsG : this.pPts;
+      P = this.pPts;
       gl.useProgram(P.p);
       gl.bindTexture(gl.TEXTURE_2D, this.state[0].tex);
       gl.uniform1i(P.u.u_state, 0);
       gl.uniform1i(P.u.u_w, this.PW);
-      if (this.guides) {
-        gl.uniform2fv(P.u.u_P, new Float32Array(this.gP.flat()));
-        gl.uniform1fv(P.u.u_W, new Float32Array(this.gW));
-        gl.uniform1f(P.u.u_gtime, this.t);
-        gl.uniform1f(P.u.u_twist, this.gTwist);
-        gl.uniform1f(P.u.u_subLight, this.gSub);
-        gl.uniform1f(P.u.u_lanes, GUIDE.lanes);
-        gl.uniform1f(P.u.u_jit, GUIDE.laneJitter);
-        gl.uniform1f(P.u.u_dust, GUIDE.dust + GUIDE.dustHigh * high);
-        const gr = new Float32Array(16);
-        (this.gRip || []).slice(0, 4).forEach((r, i) => gr.set([r.k, r.u, r.t, r.a], i * 4));
-        gl.uniform4fv(P.u.u_grip, gr);
-      } else {
-        gl.uniform1f(P.u.u_spread, this.spreadNow);
-        gl.uniform2f(P.u.u_center, this.focus.x, this.focus.y);
-      }
+      gl.uniform1f(P.u.u_spread, this.spreadNow);
+      gl.uniform2f(P.u.u_center, this.focus.x, this.focus.y);
       gl.uniform1f(P.u.u_asp, this.asp);
+      gl.uniform1f(P.u.u_ang, this.ang);
+      this._setGuide(P);
       gl.uniform1f(P.u.u_size, 2.4 * this.dpr);                 // thicker lines
       gl.uniform3fv(P.u.u_colA, this.colA);
       gl.uniform3fv(P.u.u_colB, this.colB);
       gl.uniform3fv(P.u.u_colAcc, this.colAcc || [1, 1, 1]);
-      gl.uniform1f(P.u.u_visible, (this.guides ? GUIDE.visible : M.visible) * (1 - 0.8 * quietG)); // SILENCE: strands dissolve
+      gl.uniform1f(P.u.u_visible, M.visible * (1 - 0.8 * quiet)); // MOOD + SILENCE: strands dissolve
       gl.uniform1f(P.u.u_shimmer, this.idle ? 0.1 : 0.6 * high * (0.4 + 0.6 * (this.lumin ?? 0.2))); // HIGH: surface shimmer
       gl.uniform1f(P.u.u_time, this.t);
       gl.uniform1f(P.u.u_lumin, this.lumin ?? 0.2);
