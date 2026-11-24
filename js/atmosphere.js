@@ -750,50 +750,6 @@ void main(){
         if (!g.col) g.col = target;
         else g.col = g.col.map((v, i) => v + (target[i] - v) * ease(dt, g.chordAmt > 0.6 ? 1.2 : 5));
       }
-      // MERGING: blobs that drift near each other pull together, and when they
-      // touch the bigger one absorbs the smaller, growing to hold both, like
-      // drops of ink finding each other. They gather more as the music builds
-      // and fills out, and mostly keep to themselves when it's quiet. The bass
-      // glow and the voice light keep their own identity.
-      const cohesion = this.idle ? 0.25 : clamp(0.25 + 0.5 * (this.up || 0) + 0.45 * (this.tension || 0) + 0.2 * lush);
-      const free = this.forms.filter((g) => KINDS[g.kind].layer === 1 && !g.dom && !g.absorbedBy
-        && (g.role === null || g.role === 'chord') && g.presence > 0.5 && g.age < g.span - 3);
-      for (let i = 0; i < free.length; i++) {
-        for (let j = i + 1; j < free.length; j++) {
-          const a = free[i], b = free[j];
-          if (a.absorbedBy || b.absorbedBy) continue;
-          const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) + 1e-6;
-          const reach = (a.size + b.size) * 1.8;
-          if (d > reach) continue;
-          // pull together; the smaller one moves more
-          const k = cohesion * 0.18 * (1 - d / reach) * dt;
-          const wa = b.size / (a.size + b.size), wb = a.size / (a.size + b.size);
-          a.x += dx * k * wa; a.y += dy * k * wa;
-          b.x -= dx * k * wb; b.y -= dy * k * wb;
-          if (d < (a.size + b.size) * 0.42) {
-            const big = a.size >= b.size ? a : b, small = big === a ? b : a;
-            small.absorbedBy = big;
-            small.span = Math.min(small.span, small.age + 2.5);
-            const area = big.size * big.size + small.size * small.size;
-            big.sizeTarget = Math.min(0.55, Math.sqrt(area));
-            big.span = Math.max(big.span, big.age + 10);
-            const wS = (small.size * small.size) / area;
-            if (big.col && small.col) big.col = big.col.map((v, n) => v + (small.col[n] - v) * wS);
-            if (big.chordCol && small.chordCol) big.chordCol = big.chordCol.map((v, n) => v + (small.chordCol[n] - v) * wS);
-            big.reach = Math.max(big.reach || 0, small.reach || 0);
-          }
-        }
-      }
-      for (const g of this.forms) {
-        // an absorbed blob flows into the one that took it in, fading as it goes
-        if (g.absorbedBy) {
-          g.x += (g.absorbedBy.x - g.x) * ease(dt, 0.8);
-          g.y += (g.absorbedBy.y - g.y) * ease(dt, 0.8);
-        }
-        // a blob that took another in grows smoothly to hold both
-        if (g.sizeTarget) g.size += (g.sizeTarget - g.size) * ease(dt, 2.5);
-      }
-
       this.forms = this.forms.filter((g) => g.age < g.span);
 
       // HIGHS: fleeting fine points inside the brighter midground forms
