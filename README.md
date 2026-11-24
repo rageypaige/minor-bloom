@@ -71,8 +71,7 @@ phone with **audio file**.
   **Light is selective and depth is layered:** strands sit in a faint,
   soft background, a middle layer and a few crisper foreground strands; light
   builds where strands converge and when the music grows intense, with a
-  faint diffused glow around the most luminous filaments; now and then a
-  single particle catches the light like a distant star; a few strands carry
+  faint diffused glow around the most luminous filaments; a few strands carry
   a lighter shade of their colour. Quiet passages stay very subtle.
   Moods glide into each other rather than switching. Half of the blend is
   the song's running average, and the key seeds the shape of the wave field,

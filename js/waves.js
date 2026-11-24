@@ -138,9 +138,9 @@ void main(){ o = vec4(texture(u_prev, gl_FragCoord.xy / u_res).rgb * u_keep, 1.)
   // 2b. Draw the particles as points of light.
   const PTS_VS = `#version 300 es
 precision highp float;
-uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_spread, u_visible, u_time, u_lumin, u_glint;
+uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_spread, u_visible;
 uniform vec2 u_center;
-out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_glint; out float v_sharp;
+out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp;
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
 void main(){
   ivec2 ij = ivec2(gl_VertexID % u_w, gl_VertexID / u_w);
@@ -168,19 +168,13 @@ void main(){
   v_sharp = layer == 0. ? 0. : layer == 2. ? 1. : .55;
   v_a *= layer == 0. ? .45 : layer == 2. ? 1.15 : 1.;
 
-  // CATCHING THE LIGHT: now and then a single particle flares briefly, like
-  // a distant star; more often when the music is intense or bright up top
-  // (an instant, so a moving particle leaves a single point, not a trail)
-  float ph = u_time * (1.2 + 1.6 * h1(s.w * 8.3)) + h1(s.w * 4.9) * 40.;
-  float pk = pow(max(0., sin(ph)), 900.);
-  v_glint = pk * step(h1(s.w * 17.1), u_glint) * (layer == 0. ? .4 : 1.);
   gl_Position = vec4(pos.x / (u_asp * .5), pos.y / .5, 0., 1.);
-  gl_PointSize = u_size * size * (.7 + .6 * h1(s.w * 5.3)) * (1. + 1.4 * v_glint);
+  gl_PointSize = u_size * size * (.7 + .6 * h1(s.w * 5.3));
 }`;
   const PTS_FS = `#version 300 es
 precision highp float;
 uniform vec3 u_colA, u_colB, u_colAcc; uniform float u_bright, u_accent, u_lumin;
-in float v_a; in float v_s; in float v_acc; in float v_layer; in float v_glint; in float v_sharp;
+in float v_a; in float v_s; in float v_acc; in float v_layer; in float v_sharp;
 out vec4 o;
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
 void main(){
@@ -196,8 +190,6 @@ void main(){
   lit = mix(lit, mix(col, vec3(1., .97, .92), .45) * 1.6, tone * u_lumin * .8);
   // STORMY / RESTLESS: occasional luminous accent strands
   lit += u_colAcc * v_acc * u_accent * 4.;
-  // a particle catching the light: a brief soft-white flare
-  lit += mix(col, vec3(1., .97, .93), .7) * v_glint * 7.;
   o = vec4(lit * u_bright * v_a * disc, 1.);
 }`;
 
@@ -636,11 +628,7 @@ void main(){
       gl.uniform3fv(P.u.u_colB, this.colB);
       gl.uniform3fv(P.u.u_colAcc, this.colAcc || [1, 1, 1]);
       gl.uniform1f(P.u.u_visible, M.visible);                    // MOOD: sparseness
-      const lumin = this.lumin ?? 0.2;
-      gl.uniform1f(P.u.u_time, this.t);
-      gl.uniform1f(P.u.u_lumin, lumin);
-      // how many particles can catch the light: a few always, more when intense
-      gl.uniform1f(P.u.u_glint, this.idle ? 0.003 : 0.0015 + 0.009 * lumin + 0.004 * high);
+      gl.uniform1f(P.u.u_lumin, this.lumin ?? 0.2);
       gl.uniform1f(P.u.u_accent, M.accent * (0.15 + 0.85 * acc) * (this.idle ? 0 : 1)); // MOOD: luminous accents
       // brightness per particle: louder is brighter; fewer particles each brighter
       const per = (98304 / (this.PW * this.PH)) * (this.idle ? 0.007 : 0.009 + 0.02 * vol);
