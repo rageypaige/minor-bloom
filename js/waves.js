@@ -74,21 +74,25 @@ void main(){
   float d = fract(n * u_levels + (h1(seed * 4.3) - .5) * u_thick) - .5;
   vec2 toLine = (-d / u_levels) * g / g2;
   // ...and streaming along it
-  vec2 along = vec2(-g.y, g.x) / sqrt(g2);
+  // half the particles flow each way along the waves, so the light builds
+  // evenly across the screen instead of piling up downstream
+  vec2 along = vec2(-g.y, g.x) / sqrt(g2) * (h1(seed * 11.3) < .5 ? -1. : 1.);
   // some particles (more with the highs) drift off the lines as dust
   float dusty = step(1. - u_dust, h1(seed * 7.7));
   vec2 v = toLine * u_pull * (1. - .85 * dusty) + along * u_flow * (1. + .5 * dusty);
   // the waves spread out as the music fills out, and gather when it's sparse
   vec2 c = p - u_center;
-  float r = length(c / vec2(u_spread * u_asp * .55, u_spread * .55));
+  vec2 cn = abs(c / vec2(u_spread * u_asp * .6, u_spread * .6));
+  float r = pow(pow(cn.x, 4.) + pow(cn.y, 4.), .25); // a soft rectangle, reaching the corners
   v -= c * max(r - 1., 0.) * .6;
   p += v * u_dt;
   age += u_dt;
   bool out_ = abs(p.x) > u_asp * .62 || abs(p.y) > .62;
   if (age > life(seed) || out_) {
     // reborn somewhere inside the current spread
-    float a = h1(seed + u_time * 1.3) * 6.2832, rr = sqrt(h1(seed * 1.7 + u_time)) * .9;
-    p = u_center + vec2(cos(a) * u_spread * u_asp * .55, sin(a) * u_spread * .55) * rr;
+    // reborn anywhere inside the current spread, evenly
+    vec2 j = vec2(h1(seed + u_time * 1.3), h1(seed * 1.7 + u_time)) * 2. - 1.;
+    p = u_center + j * vec2(u_spread * u_asp * .6, u_spread * .6) * .95;
     age = 0.;
   }
   o = vec4(p, age, seed);
@@ -113,9 +117,9 @@ void main(){
   float life = 5. + 9. * h1(s.w * 3.1);
   v_a = smoothstep(0., 2.5, s.z) * (1. - smoothstep(life - 2.5, life, s.z));
   // thin out softly toward the edge of the spread
-  vec2 c = s.xy - u_center;
-  float r = length(c / vec2(u_spread * u_asp * .55, u_spread * .55));
-  v_a *= 1. - smoothstep(.55, 1.05, r);
+  vec2 cn = abs((s.xy - u_center) / vec2(u_spread * u_asp * .6, u_spread * .6));
+  float r = pow(pow(cn.x, 4.) + pow(cn.y, 4.), .25);
+  v_a *= 1. - smoothstep(.7, 1.1, r);
   v_s = s.w;
   gl_Position = vec4(s.x / (u_asp * .5), s.y / .5, 0., 1.);
   gl_PointSize = u_size * (.7 + .6 * h1(s.w * 5.3));
