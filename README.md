@@ -99,6 +99,16 @@ phone with **audio file**.
   - *silence and quiet*: movement softens and strands gradually dissolve
   Each has its own attack and decay, and levels are measured against each
   track's own sustained loudness, so differently mastered songs behave alike.
+- **Guided ribbons** (experimental), at
+  [paigelatimer.ca/minor-bloom/?style=ribbons](https://paigelatimer.ca/minor-bloom/?style=ribbons):
+  the same particles, palettes, stars and grain, but composed around one
+  dominant sweeping curve and two subordinate curves derived from it.
+  Particles keep a fixed ribbon and lane, travel along their curve and
+  respawn on it, so the composition stays cohesive however the music moves.
+  Music only deforms that structure: bass sways it, mids bend it, tension
+  adds bounded curvature, volume widens and brightens it, rhythm sends small
+  waves along it, highs add shimmer, harmony sets colour. Tuning lives in the
+  `GUIDE` table in `js/waves.js`.
 - **Night sky**, at
   [paigelatimer.ca/minor-bloom/?style=sky](https://paigelatimer.ca/minor-bloom/?style=sky):
   one soft form of light with growing tendrils, described below.
