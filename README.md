@@ -30,7 +30,7 @@ can't listen to Spotify playing on the same phone. Play the song on another
 speaker or computer and choose **microphone**, or pick a song saved on the
 phone with **audio file**.
 
-## What you'll see
+## What you'll see in the night-sky style
 
 - **One form of light** that lives for the whole song, with a soft aura
   around it, in a deep charcoal fog with fine film grain. The music shapes
@@ -49,15 +49,17 @@ phone with **audio file**.
   the form smaller and softer; full, driving music makes it larger and
   brighter.
 
-## Trying the particle waves
+## Two styles
 
-A second style is being explored at
-[paigelatimer.ca/minor-bloom/?style=waves](https://paigelatimer.ca/minor-bloom/?style=waves):
-tens of thousands of particles of light stream along flowing wave lines,
-layering into silky sheets in the same night sky. Volume sets their speed,
-brightness and trail length; fullness how many waves there are and how far
-they spread; the midrange how they curve and fold; bass a slow swell rolling
-through; highs a dust of particles drifting off; harmony their colour.
+- **Particle waves** (the default): tens of thousands of particles of light
+  stream along flowing wave lines, layering into silky sheets in a night sky.
+  Volume sets their speed and brightness and how thick the waves get;
+  fullness how many waves there are and how far they spread; the midrange how
+  they curve and fold; bass a slow swell rolling through; highs a dust of
+  particles drifting off; harmony their colour.
+- **Night sky**, at
+  [paigelatimer.ca/minor-bloom/?style=sky](https://paigelatimer.ca/minor-bloom/?style=sky):
+  one soft form of light with growing tendrils, described below.
 
 ## What it listens for
 
@@ -83,8 +85,8 @@ and then glides there.
 - `index.html`, `css/style.css`: the page
 - `js/listener.js`: audio capture and analysis (loudness, bass/mid/high,
   brightness, key, chords, tempo, melody)
-- `js/atmosphere.js`: the night-sky style (WebGL2)
-- `js/waves.js`: the particle-waves style, at `?style=waves` (WebGL2)
+- `js/waves.js`: the particle-waves style, the default (WebGL2)
+- `js/atmosphere.js`: the night-sky style, at `?style=sky` (WebGL2)
 - `js/shared.js`: noise, palettes and mood words
 - `js/app.js`: ties it all together
 

@@ -11,8 +11,8 @@
   document.documentElement.dataset.tab = canTab ? 'yes' : 'no';
 
   let atmos = null;
-  // ?style=waves tries the particle-waves style; otherwise the night-sky atmosphere
-  const wantWaves = new URLSearchParams(location.search).get('style') === 'waves';
+  // The particle waves are the default; ?style=sky keeps the night-sky style
+  const wantWaves = new URLSearchParams(location.search).get('style') !== 'sky';
   try { atmos = wantWaves && MB.Waves ? new MB.Waves($('#atmos')) : new MB.Atmosphere($('#atmos')); } catch (e) {
     console.warn('Style unavailable:', e);
     if (wantWaves) { try { atmos = new MB.Atmosphere($('#atmos')); } catch (e2) { /* no WebGL2 */ } }
