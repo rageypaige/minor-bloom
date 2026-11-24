@@ -57,17 +57,26 @@ phone with **audio file**.
   fullness how many waves there are and how far they spread; the midrange how
   they curve and fold; bass a slow swell rolling through; highs a dust of
   particles drifting off; harmony their colour.
-  **Mood shapes the composition**, not just its colour. The analysis is read
-  as a continuous blend of four moods (an artistic interpretation, not a
-  measurement), each with its own structure:
-  - *warm* (major, medium intensity): expansive, loosely flowing ribbons,
-    gentle curves, soft transitions, copper and champagne.
-  - *tender* (major, calm): sparse, very fine filaments, delicate movement,
-    lots of space, lavender and pearl.
-  - *stormy* (minor, intense): intersecting currents, layered turbulence,
-    unstable direction, deep indigo with occasional luminous accents.
-  - *restless* (intense and busy, with fast chord changes): tight loops,
-    irregular turns, overlapping textures, sharper rhythmic accents.
+  **The music is read along six independent dimensions,** each a sustained,
+  smoothed characteristic rather than a mood preset:
+  - *harmonic character* (major/minor leaning, tonal brightness): colour
+    temperature and colour relationships only. Minor is not darker or
+    stormier; major is not brighter or happier.
+  - *energy* (loudness relative to the song, drive, fullness): movement
+    speed, expansion and luminosity.
+  - *rhythmic activity* (onset rate, drive): how often and how strongly
+    ripples disturb the strands.
+  - *harmonic tension* (poor chord fit, distant chords, where reliably
+    detectable): curvature, folding and structural complexity.
+  - *texture* (fullness, spectral spread, shimmer): how many strands, how
+    soft and how layered.
+  - *dynamic variation* (how much the music is changing): how quickly the
+    composition transforms.
+  So a slow, intimate, melancholic acoustic song gives a few long, gently
+  undulating filaments in generous space, low turbulence, restrained light,
+  slow transformation and muted, cool colour: profound without being
+  visually intense. The mood words in the corner are a poetic annotation
+  read from the same dimensions; they don't choose anything visual.
   **Light is selective and depth is layered:** strands sit in a faint,
   soft background, a middle layer and a few crisper foreground strands; light
   builds where strands converge and when the music grows intense, with a

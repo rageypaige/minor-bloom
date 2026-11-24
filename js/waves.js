@@ -273,39 +273,13 @@ void main(){
   o = vec4(col, 1.);
 }`;
 
-  // Where each mood sits on the three readings the analysis gives us
-  // (harmony: 0 minor .. 1 major; intensity: 0 calm .. 1 driving; busyness:
-  // 0 spacious .. 1 busy, rapidly changing), and how it shapes
-  // the composition. Each value is a gentle multiplier or amount; the final
-  // look is a weighted blend of all four.
-  const MOODS = {
-    warm: {
-      at: [0.8, 0.5, 0.3],
-      density: 0.72, thick: 0.9, curve: 0.75, fold: 0.5, dust: 0.35, swell: 0.7, strands: 14, turb: 0.06, cross: 0.0, instab: 0.15,
-      speed: 0.85, spread: 1.15, light: 1.05, visible: 1.0, trail: 1.35, accent: 0.0,
-      colA: [0.86, 0.55, 0.4], colB: [0.93, 0.84, 0.66], acc: [1.0, 0.9, 0.75], // copper, champagne
-    },
-    tender: {
-      at: [0.7, 0.12, 0.15],
-      density: 1.1, thick: 0.9, curve: 0.85, fold: 0.55, dust: 0.15, swell: 0.15, strands: 3, turb: 0.03, cross: 0.0, instab: 0.1,
-      speed: 0.6, spread: 0.75, light: 0.8, visible: 0.42, trail: 1.15, accent: 0.0,
-      colA: [0.74, 0.69, 0.93], colB: [0.9, 0.89, 0.94], acc: [0.95, 0.95, 1.0], // lavender, pearl
-    },
-    stormy: {
-      at: [0.2, 0.8, 0.3],
-      density: 1.15, thick: 0.85, curve: 1.15, fold: 1.15, dust: 0.6, swell: 1.2, strands: 24, turb: 0.7, cross: 0.45, instab: 0.7,
-      speed: 1.25, spread: 1.05, light: 0.85, visible: 1.0, trail: 0.95, accent: 0.55,
-      colA: [0.3, 0.33, 0.76], colB: [0.45, 0.4, 0.82], acc: [0.72, 0.86, 1.0], // deep indigo, luminous accents
-    },
-    restless: {
-      at: [0.35, 0.8, 0.65],
-      density: 1.1, thick: 0.75, curve: 1.6, fold: 1.7, dust: 0.9, swell: 1.0, strands: 20, turb: 0.4, cross: 0.18, instab: 1.0,
-      speed: 1.35, spread: 0.95, light: 0.95, visible: 0.95, trail: 0.7, accent: 0.45,
-      colA: [0.8, 0.46, 0.72], colB: [0.58, 0.5, 0.9], acc: [1.0, 0.82, 0.95], // rose, violet
-    },
-  };
-  const MOOD_KEYS = Object.keys(MOODS);
-  const SCALARS = ['density', 'thick', 'dust', 'swell', 'strands', 'curve', 'fold', 'turb', 'cross', 'instab', 'speed', 'spread', 'light', 'visible', 'trail', 'accent'];
+  // Colour families by tonal temperature. They share a similar lightness on
+  // purpose: harmony changes the temperature of the light, never how dark it
+  // is. (Minor is not darker, major is not brighter.)
+  // (Strong chroma: thousands of additive particles lighten any colour, so
+  // these hold their tint as the light builds up.)
+  const WARM_A = [0.92, 0.5, 0.34], WARM_B = [0.95, 0.76, 0.5];    // copper rose, champagne
+  const COOL_A = [0.5, 0.44, 0.96], COOL_B = [0.72, 0.62, 0.98];   // slate lavender, pearl lilac
 
   function rgbToHsl([r, g, b]) {
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
@@ -416,7 +390,8 @@ void main(){
     // Particles start scattered loosely around the middle.
     reset() {
       // a new song starts a new fingerprint
-      this.songW = null;
+      this.songD = null;
+      this.dims = null;
       this.songT = 0;
       const n = this.PW * this.PH;
       const data = new Float32Array(n * 4);
@@ -451,22 +426,14 @@ void main(){
     }
 
     // muted palette colours (the same major/minor logic as the rest of the app)
-    _col(i, f, chord) {
-      const mood = chord ? { ...f, mode: f.chordQual ? 0.9 : 0.1 } : f;
-      const c = MB.moodHSL(i, mood);
-      return hslToRgb(c.h, c.s * 0.75, clamp(c.l * 0.7 + 22, 35, 72));
-    }
-
-    // Read the music as a blend of moods. The blend glides (it never jumps),
-    // and half of it is the song's own running average, its fingerprint.
+    // Read the music along six independent, continuous dimensions. Each is a
+    // sustained characteristic: smoothed over seconds, so the interpretation
+    // never jumps, and 30% of it is the song's own running average (its
+    // fingerprint). Then each dimension shapes its own part of the picture.
     _mood(f, dt) {
-      // three readings of the music:
-      //   valence   - how major/bright the harmony is
-      //   intensity - real loudness and drive (drums), not loudness relative
-      //               to the song itself, so soft songs read as soft
-      //   busyness  - how often notes strike and how quickly chords change
-      const e = f.silent ? 0 : (f.energy ?? 0.3);
-      this.rmsL = (this.rmsL ?? 0.05) + ((f.silent ? 0 : f.rms || 0) - (this.rmsL ?? 0.05)) * ease(dt, 3);
+      const on = !f.silent;
+      // raw readings, reused from the analysis
+      this.rmsL = (this.rmsL ?? 0.05) + ((on ? f.rms || 0 : 0) - (this.rmsL ?? 0.05)) * ease(dt, 3);
       this.onsetRate = (this.onsetRate ?? 1.5) + ((f.beat ? 1 / Math.max(dt, 1e-3) : 0) - (this.onsetRate ?? 1.5)) * ease(dt, 5);
       if (f.chordId !== undefined && f.chordId !== this.lastChordId) {
         if (this.lastChordId !== undefined) this.chordHits = (this.chordHits || 0) + 1;
@@ -474,42 +441,74 @@ void main(){
       }
       this.chordRate = (this.chordRate ?? 0.3) + (((this.chordHits || 0) / Math.max(dt, 1e-3)) - (this.chordRate ?? 0.3)) * ease(dt, 8);
       this.chordHits = 0;
-      const valence = clamp(f.mode ?? 0.5);
-      const loud = clamp(this.rmsL / 0.12);
-      const arousal = clamp(0.4 * loud + 0.4 * (this.drive ?? 0.5) + 0.2 * e * (this.drive ?? 0.5));
-      const busy = clamp(0.3 * clamp((this.onsetRate - 1.5) / 3) + 0.7 * clamp((this.chordRate - 0.2) / 0.6));
-      this.val = (this.val ?? valence) + (valence - (this.val ?? valence)) * ease(dt, 5);
-      this.aro = (this.aro ?? arousal) + (arousal - (this.aro ?? arousal)) * ease(dt, 5);
-      this.busy = (this.busy ?? busy) + (busy - (this.busy ?? busy)) * ease(dt, 5);
-      const w = {};
-      let sum = 0;
-      for (const k of MOOD_KEYS) {
-        const [mv, ma, mb] = MOODS[k].at;
-        const d2 = Math.pow((this.val - mv) / 0.35, 2) + Math.pow((this.aro - ma) / 0.3, 2) + Math.pow((this.busy - mb) / 0.22, 2);
-        w[k] = Math.exp(-d2);
-        sum += w[k];
-      }
-      for (const k of MOOD_KEYS) w[k] /= sum || 1;
-      // the song's fingerprint: a running average over everything heard so far
-      if (!this.idle && !f.silent) {
+      const drive = this.drive ?? 0.5;
+      const level = this.vol ?? 0.3;
+
+      // HARMONIC CHARACTER: tonal temperature, from major/minor and how bright
+      // the sound is. Colour only.
+      const harm = clamp(0.5 + 0.55 * ((f.mode ?? 0.5) - 0.5) + 0.35 * ((f.brightness ?? 0.5) - 0.5));
+      // ENERGY: loudness against the song's own levels, plus drive and how
+      // full the sound is. Raw loudness counts only a little, because most
+      // recordings are mastered loud; an intimate song with no drums and
+      // little layering reads as calm however it was mastered.
+      const energy = on ? clamp(0.3 * level + 0.15 * clamp(this.rmsL / 0.12) + 0.33 * drive + 0.22 * clamp(f.lush ?? 0)) : 0;
+      // RHYTHMIC ACTIVITY: how often notes strike, and how driven they are
+      const rhythm = on ? clamp(0.5 * clamp((this.onsetRate - 1) / 3) + 0.5 * drive) : 0;
+      // HARMONIC TENSION: computed in update() from chord fit and distance
+      const tension = this.tension ?? 0;
+      // TEXTURE: how full and layered the sound is (spread across the
+      // spectrum, low weight, shimmer up high)
+      const texture = on ? clamp(0.75 * (f.lush ?? 0) + 0.25 * (this.high ?? 0)) : 0;
+      // DYNAMIC VARIATION: how much the music is changing: energy moving away
+      // from its long-term level, and the pace of chord changes
+      this.eLong = (this.eLong ?? energy) + (energy - (this.eLong ?? energy)) * ease(dt, 20);
+      this.eDev = (this.eDev ?? 0) + (Math.abs(energy - this.eLong) - (this.eDev ?? 0)) * ease(dt, 6);
+      const variation = clamp(0.65 * clamp(this.eDev * 5) + 0.35 * clamp((this.chordRate - 0.1) / 0.7));
+
+      const raw = { harm, energy, rhythm, tension, texture, variation };
+      const tau = { harm: 6, energy: 3, rhythm: 4, tension: 3, texture: 5, variation: 6 };
+      if (!this.idle && on) {
         this.songT = (this.songT || 0) + dt;
-        this.songW = this.songW || Object.fromEntries(MOOD_KEYS.map((k) => [k, w[k]]));
+        this.songD = this.songD || { ...raw };
         const k2 = Math.min(1, dt / Math.max(4, this.songT));
-        for (const k of MOOD_KEYS) this.songW[k] += (w[k] - this.songW[k]) * k2;
+        for (const k in raw) this.songD[k] += (raw[k] - this.songD[k]) * k2;
       }
-      const target = {};
-      for (const k of MOOD_KEYS) target[k] = this.songW && !this.idle ? 0.5 * w[k] + 0.5 * this.songW[k] : w[k];
-      this.moodW = this.moodW || { ...target };
-      for (const k of MOOD_KEYS) this.moodW[k] += (target[k] - this.moodW[k]) * ease(dt, 3);
-      // blend every property
-      const M = { colA: [0, 0, 0], colB: [0, 0, 0], acc: [0, 0, 0] };
-      for (const sKey of SCALARS) M[sKey] = 0;
-      for (const k of MOOD_KEYS) {
-        const m = MOODS[k], wk = this.moodW[k];
-        for (const sKey of SCALARS) M[sKey] += m[sKey] * wk;
-        for (const c of ['colA', 'colB', 'acc']) for (let i = 0; i < 3; i++) M[c][i] += m[c][i] * wk;
+      this.dims = this.dims || { ...raw };
+      for (const k in raw) {
+        const target = this.songD && !this.idle ? 0.7 * raw[k] + 0.3 * this.songD[k] : raw[k];
+        this.dims[k] += (target - this.dims[k]) * ease(dt, tau[k]);
       }
-      this.M = M;
+      const D = this.dims;
+      const { energy: E, rhythm: R, texture: X, variation: V } = D;
+      const T = D.tension;
+
+      // Each dimension has its own, restrained contribution.
+      this.M = {
+        // TEXTURE: how many strands, how many fibres per strand, softness
+        density: 0.75 + 0.5 * X,
+        strands: 4 + 26 * X,
+        visible: 0.5 + 0.5 * X,
+        dust: 0.25 + 0.8 * X,
+        thick: 0.55 + 0.6 * X + 0.25 * E,
+        // TENSION: curvature and structural complexity (more is added in
+        // render, where tension also folds and crosses the strands)
+        curve: 0.85 + 0.35 * T,
+        fold: 0.65 + 0.2 * R,
+        turb: 0.04 + 0.25 * R * E,
+        cross: 0,
+        instab: 0.08 + 0.45 * T * (0.4 + 0.6 * R) + 0.2 * V,
+        // ENERGY: speed, expansion, luminosity
+        speed: 0.55 + 0.75 * E,
+        spread: 0.72 + 0.48 * E,
+        light: 0.75 + 0.35 * E,
+        // RHYTHM: disturbances and their sharpness
+        trail: 1.3 - 0.55 * R,
+        accent: 0.45 * R * E,
+        swell: 0.5 + 0.6 * E,
+      };
+      // DYNAMIC VARIATION: how quickly the composition transforms
+      this.evolveT = (this.evolveT ?? this.t) + dt * (0.45 + 1.1 * V + 0.3 * E);
+
       // the key seeds the shape of the wave field, so a song returns to a
       // similar landscape (moves smoothly if the key estimate changes)
       if (!this.idle && f.tonic !== undefined) {
@@ -544,7 +543,9 @@ void main(){
       // HARMONIC TENSION, only where it can be read reliably: the harmony
       // fits a triad poorly, or the chord sits far from the key on the circle
       // of fifths; confidence fades out when the music is quiet or thin
-      const fitT = clamp((0.86 - (f.triadFit ?? 0.86)) / 0.4);
+      // (conservative: flowing arpeggios and melody notes blur the fit a
+      // little, so only a clearly poor fit counts)
+      const fitT = clamp((0.78 - (f.triadFit ?? 0.86)) / 0.38);
       const k5 = ((((f.chordRoot ?? 0) - (f.tonic ?? 0)) * 7) % 12 + 12) % 12;
       const farT = clamp((Math.min(k5, 12 - k5) - 1.5) / 3);
       const conf = on ? clamp((f.mid ?? 0) * 2) : 0;
@@ -562,11 +563,12 @@ void main(){
         this.beatAvg = (this.beatAvg ?? bs) + (bs - (this.beatAvg ?? bs)) * 0.08;
         const rel = clamp(bs / Math.max(0.15, this.beatAvg * 1.6));
         this.ripCool = (this.ripCool || 0);
-        if (rel > 0.55 && this.ripCool <= 0 && this.ripples.length < 4) {
-          const amp = 0.06 * rel * (0.25 + 0.75 * (this.drive ?? 0.5));
+        const R = this.dims ? this.dims.rhythm : 0.3;
+        if (rel > 0.85 - 0.45 * R && this.ripCool <= 0 && this.ripples.length < 4) {
+          const amp = 0.07 * rel * (0.12 + 0.88 * R);
           const sp = (this.spreadNow || 0.8) * 0.5;
           this.ripples.push({ x: this.focus.x + rnd(-sp, sp) * this.asp, y: this.focus.y + rnd(-sp, sp) * 0.8, t: 0, a: amp });
-          this.ripCool = 0.22;
+          this.ripCool = 0.25 + 2.5 * (1 - R) * (1 - R);
         }
       }
       this.ripCool = (this.ripCool || 0) - dt;
@@ -582,12 +584,12 @@ void main(){
       const M = this.M;
       // the waves' direction turns slowly; restless and stormy music makes it
       // wander and change course irregularly
-      const wander = MB.noise3(t * (0.012 + 0.05 * M.instab), this.focus.seed, 7.7);
+      const wander = MB.noise3((this.evolveT ?? t) * (0.012 + 0.05 * M.instab), this.focus.seed, 7.7);
       this.ang = 0.3 * Math.sin(t * 0.013 + this.focus.seed) + 0.9 * M.instab * wander;
-      // LUMINOSITY follows emotional intensity: how loud and driven the
-      // music really is, how full, and how strongly the mood carries accents.
-      // Quiet passages stay very subtle; intense ones reveal light and detail.
-      const lumRaw = this.idle ? 0.15 : clamp(0.55 * (this.aro ?? 0.3) * (0.4 + 0.6 * (this.vol ?? 0.3)) + 0.3 * (this.lush ?? 0) * (this.vol ?? 0.3) + 0.15 * (M.accent || 0));
+      // LUMINOSITY follows energy (and a little texture and rhythm), not the
+      // key: quiet, intimate music stays restrained however deep its feeling
+      const Dm = this.dims;
+      const lumRaw = this.idle ? 0.15 : clamp(0.6 * Dm.energy * (0.4 + 0.6 * (this.vol ?? 0.3)) + 0.25 * Dm.texture * (this.vol ?? 0.3) + 0.15 * Dm.rhythm * Dm.energy);
       this.lumin = (this.lumin ?? lumRaw) + (lumRaw - (this.lumin ?? lumRaw)) * ease(dt, lumRaw > (this.lumin ?? lumRaw) ? 1.5 : 4);
       // rhythmic accents (restless, stormy): a quick rise on strong beats
       if (f.beat && !f.silent) this.acc = Math.max(this.acc || 0, f.beatStrength || 0.5);
@@ -598,24 +600,38 @@ void main(){
       this.focus.x = MB.noise3(t * 0.01, fs, 0) * 0.3 * this.asp * 0.5;
       this.focus.y = MB.noise3(fs, t * 0.01, 3) * 0.18;
 
-      // HARMONY: colour. The first colour family comes from the mood and the
-      // key; the second from the current chord, and how far it sits from the
-      // first follows the chord's distance from the key: chords close to
-      // home stay in a neighbouring colour, distant ones reach toward a
-      // contrasting family. Transitions are gradual.
-      const pa = this._col(0, f), pb = f.chordId && !this.idle ? this._col(2, f, true) : this._col(3, f);
-      const ta = M.colA.map((v, i) => 0.65 * v + 0.35 * pa[i]);
-      let tb = M.colB.map((v, i) => 0.6 * v + 0.4 * pb[i]);
+      // HARMONIC CHARACTER: colour temperature. Brighter, major-leaning
+      // harmony warms toward copper and champagne; darker-hued, minor-leaning
+      // harmony cools toward lavender and pearl; the light stays equally
+      // bright either way. Low energy mutes the colour (melancholy reads as
+      // muted, not dark). The key turns the hue a little, and the current
+      // chord sets the second family: close to home it stays a neighbour,
+      // far from home it reaches toward a contrasting colour.
+      // (stretched, so leaning one way reads clearly; the middle still blends)
+      const tw = clamp((Dm.harm - 0.25) / 0.5);
+      const twS = tw * tw * (3 - 2 * tw);
+      const mute = 0.22 - 0.16 * Dm.energy;
+      const shift = (f.hueShift || 0) * 0.6;
+      const finish = (c) => {
+        const [h, sat, l] = rgbToHsl(c);
+        const g = hslToRgb(h + shift, sat * 100, l * 100);
+        const y = 0.3 * g[0] + 0.59 * g[1] + 0.11 * g[2];
+        return g.map((v) => v + (y - v) * mute);
+      };
+      const ta = finish(WARM_A.map((v, i) => v * twS + COOL_A[i] * (1 - twS)));
+      let tb = finish(WARM_B.map((v, i) => v * twS + COOL_B[i] * (1 - twS)));
       if (!this.idle && f.chordId) {
         const dist = Math.min(k5, 12 - k5) / 6; // 0 home .. 1 farthest
         const [h, sat, l] = rgbToHsl(ta);
-        const rel = hslToRgb(h + (f.chordQual ? 1 : -1) * (12 + 70 * dist), sat * 100, l * 100);
-        tb = tb.map((v, i) => 0.55 * v + 0.45 * rel[i]);
+        const rel = hslToRgb(h + (f.chordQual ? 1 : -1) * (12 + 70 * dist), sat * 100, Math.min(0.85, l + 0.08) * 100);
+        tb = tb.map((v, i) => 0.6 * v + 0.4 * rel[i]);
       }
-      this.colAcc = M.acc;
-      this.colA = this.colA.map((v, i) => v + (ta[i] - v) * ease(dt, 4));
-      this.colB = this.colB.map((v, i) => v + (tb[i] - v) * ease(dt, 2.5));
+      // accents are a lighter shade within the same family
+      this.colAcc = tb.map((v) => Math.min(1, v * 1.15 + 0.08));
+      this.colA = this.colA.map((v, i) => v + (ta[i] - v) * ease(dt, 5));
+      this.colB = this.colB.map((v, i) => v + (tb[i] - v) * ease(dt, 3));
 
+      // stars
       // stars
       for (const st of this.stars) {
         st.x = (st.x + dt * 0.0012 + 1) % 1;
@@ -652,7 +668,8 @@ void main(){
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, sIn.tex);
       gl.uniform1i(P.u.u_state, 0);
-      gl.uniform1f(P.u.u_time, this.t);
+      // DYNAMIC VARIATION: the field transforms faster when the music changes
+      gl.uniform1f(P.u.u_time, this.evolveT ?? this.t);
       gl.uniform1f(P.u.u_dt, dt);
       gl.uniform1f(P.u.u_asp, this.asp);
       const tension = this.tension || 0, quiet = this.quietAmt || 0;

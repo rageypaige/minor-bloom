@@ -217,12 +217,21 @@
       $('#mood-detail').textContent = 'getting a feel for it';
       return;
     }
-    if (hud.mode === null) { hud.mode = f.mode; hud.energy = f.energy; }
-    hud.mode += (f.mode - hud.mode) * (1 - Math.exp(-dt / 4));
-    hud.energy += (f.energy - hud.energy) * (1 - Math.exp(-dt / 4));
+    // The words are an interpretive layer only: they read the same sustained
+    // dimensions as the visuals (harmonic character, energy, tension) but
+    // don't choose anything visual.
+    const D = atmos && atmos.dims;
+    const modeIn = D ? D.harm : f.mode, energyIn = D ? D.energy : f.energy;
+    if (hud.mode === null) { hud.mode = modeIn; hud.energy = energyIn; }
+    hud.mode += (modeIn - hud.mode) * (1 - Math.exp(-dt / 4));
+    hud.energy += (energyIn - hud.energy) * (1 - Math.exp(-dt / 4));
     hud.modeBand = band(hud.mode, hud.modeBand, 0.4, 0.6, 0.08);
-    hud.energyBand = band(hud.energy, hud.energyBand, 0.3, 0.6, 0.08);
-    const word = WORDS[hud.modeBand][hud.energyBand];
+    hud.energyBand = D ? band(hud.energy, hud.energyBand, 0.48, 0.72, 0.06) : band(hud.energy, hud.energyBand, 0.3, 0.6, 0.08);
+    let word = WORDS[hud.modeBand][hud.energyBand];
+    // energetic music is only stormy when it is also tense
+    const tense = D ? D.tension : 0.5;
+    if (hud.energyBand === 2 && hud.modeBand === 0 && tense < 0.35) word = 'urgent';
+    if (hud.energyBand === 2 && hud.modeBand === 1 && tense < 0.35) word = 'soaring';
     if (!hud.word) hud.word = word;
     else if (word !== hud.word) {
       if (word !== hud.cand) { hud.cand = word; hud.candFor = 0; }
