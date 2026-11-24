@@ -817,6 +817,8 @@ void main(){
       for (const st of this.stars) {
         st.x = (st.x + dt * 0.0012 + 1) % 1;
         st.glint *= Math.exp(-dt / 0.7);
+        // now and then a star catches the eye on its own
+        if (Math.random() < 0.05 * dt) st.glint = Math.max(st.glint, rnd(0.35, 0.7));
       }
       const gr = (f.spark ? 0.8 : 0) + high * high * 0.6;
       if (Math.random() < gr * dt) {
@@ -965,9 +967,12 @@ void main(){
       const sa = new Float32Array(MAXS * 4);
       let ns = 0;
       for (const st of this.stars) {
-        const tw = 0.7 + 0.3 * Math.sin(this.t * st.tw + st.ph);
+        // twinkle: an irregular flicker (like starlight through air), each
+        // star at its own pace, rather than a smooth slow wave
+        const n = clamp(0.5 + 0.8 * MB.noise3(st.ph * 7.3, this.t * st.tw * 2.4, 0.7));
+        const tw = 0.3 + 0.7 * Math.pow(n, 1.4);
         const b = (st.base * tw + st.glint * 0.6) * (this.skyVis ?? 0.6);
-        sa.set([st.x * this.c.width, st.y * this.c.height, st.size * this.dpr, b], ns * 4);
+        sa.set([st.x * this.c.width, st.y * this.c.height, st.size * this.dpr * (0.85 + 0.3 * tw + 0.3 * st.glint), b], ns * 4);
         ns++;
       }
       gl.uniform4fv(P.u.u_stars, sa);
