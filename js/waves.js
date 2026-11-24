@@ -486,9 +486,9 @@ void main(){
       this.M = {
         // TEXTURE: how many strands, how many fibres per strand, softness
         density: 0.75 + 0.5 * X,
-        strands: 4 + 26 * X,
-        visible: 0.5 + 0.5 * X,
-        dust: 0.25 + 0.8 * X,
+        strands: 3 + 13 * X,          // fewer, bolder fibres per strand
+        visible: 0.3 + 0.3 * X,       // fewer particles drawn, each thicker
+        dust: 0.12 + 0.4 * X,         // less loose, hair-like dust
         thick: 0.55 + 0.6 * X + 0.25 * E,
         // TENSION: curvature and structural complexity (more is added in
         // render, where tension also folds and crosses the strands)
@@ -726,7 +726,7 @@ void main(){
       gl.uniform1f(P.u.u_spread, this.spreadNow);
       gl.uniform2f(P.u.u_center, this.focus.x, this.focus.y);
       gl.uniform1f(P.u.u_asp, this.asp);
-      gl.uniform1f(P.u.u_size, 1.4 * this.dpr);
+      gl.uniform1f(P.u.u_size, 2.4 * this.dpr);                 // thicker lines
       gl.uniform3fv(P.u.u_colA, this.colA);
       gl.uniform3fv(P.u.u_colB, this.colB);
       gl.uniform3fv(P.u.u_colAcc, this.colAcc || [1, 1, 1]);
@@ -736,7 +736,7 @@ void main(){
       gl.uniform1f(P.u.u_lumin, this.lumin ?? 0.2);
       gl.uniform1f(P.u.u_accent, M.accent * (0.15 + 0.85 * acc) * (this.idle ? 0 : 1)); // MOOD: luminous accents
       // brightness per particle: louder is brighter; fewer particles each brighter
-      const per = (98304 / (this.PW * this.PH)) * (this.idle ? 0.007 : 0.009 + 0.02 * vol);
+      const per = (98304 / (this.PW * this.PH)) * (this.idle ? 0.006 : 0.0085 + 0.013 * vol);
       // MOOD: luminosity (sparser moods draw fewer particles, each a touch brighter)
       gl.uniform1f(P.u.u_bright, per * dt * 60 * M.light / Math.sqrt(Math.max(0.3, M.visible)));
       gl.drawArrays(gl.POINTS, 0, this.PW * this.PH);
