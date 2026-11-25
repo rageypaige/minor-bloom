@@ -84,6 +84,14 @@ phone with **audio file**.
   gives, never where it goes. Sliders: `ribbon` (amount), `asym`,
   `widthVar`, `edgeSoft`, `falloff`, `densityVar`, `dissolve`, `twist` and
   `gain`. `?render=tuned` shows the look without it.
+  On top of that, the default `sheer` preset makes the interior read like
+  layers of illuminated sheer fabric: the inside of each formation turns
+  more transparent while the luminous edge stays defined (`clarity`),
+  darker translucent channels run through the lit material (`channels`,
+  `channelScale`), a second, fainter sheet overlaps inside the first with
+  its own soft edge (`layers`), and the brightest light is compressed so it
+  keeps its colour and detail instead of burning out to white (`compress`).
+  Each is 0 = off; `?render=curtain` shows the look without any of them.
   `?render=baseline` and `?render=shortTrails` show the earlier looks. These
   change only how the light is drawn, never how the particles move.
 - **Unguided particle waves**, at

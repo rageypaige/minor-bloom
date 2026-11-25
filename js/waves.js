@@ -254,6 +254,8 @@ uniform float u_mat, u_strands, u_cross, u_time;
 // RIBBON PROFILE (rendering only): (amount, asymmetry, width variation,
 // edge softness), (density falloff, density variation, dissolve, twist)
 uniform vec4 u_rib1, u_rib2; uniform float u_ribGain;
+// SHEER (rendering only): (channel depth, channel scale, second layer, interior clarity)
+uniform vec4 u_rib3;
 // smooth, low-frequency variation in 0..1 (coherent along the ribbon)
 float lf(float x, float t, float s){ return clamp(.5 + .3 * sin(x * 1.3 + t * .045 + s) + .2 * sin(x * 2.9 - t * .06 + s * 2.7), 0., 1.); }
 ${GUIDE_FN}
@@ -320,7 +322,21 @@ void main(){
       float beyond = exp(-pow(max(-d, 0.) / soft, 2.));                 // crisp outside the edge
       float inner = exp(-pow(max(d, 0.) / 1.5, fall) * 1.4);           // nonlinear falloff to darkness
       float edgeGlow = exp(-pow(d / (soft * .6), 2.));                   // concentrated bright edge
-      float asymShape = (d < 0. ? beyond : inner) + .9 * edgeGlow;
+      // SHEER FABRIC. The interior turns more transparent while the edge
+      // stays defined; darker translucent channels run through the lit
+      // material; and a second, fainter sheet overlaps inside the first, its
+      // own soft edge offset from the main one. All slow and coherent.
+      float interior = smoothstep(.05, .55, d);       // 0 at the edge, 1 inside
+      float chPh = u * 3.14159 * u_rib3.y + .9 * sin(X * .8 + T * .04) + 6.28 * lf(X * .6, T * .5, 21.);
+      float channel = 1. - u_rib3.x * smoothstep(.45, .95, .5 + .5 * sin(chPh)) * interior;
+      inner *= (1. - .6 * u_rib3.w * interior) * channel;
+      float sgn = sign(e + 1e-4);
+      float e2 = e - sgn * (.5 + .4 * lf(X * 1.1, T * .7, 31.));   // the overlapping layer's edge
+      float d2 = (e2 - u) * sgn;
+      float layer2 = (d2 < 0. ? exp(-pow(-d2 / (soft * 1.6), 2.)) : exp(-pow(d2 / 1.1, fall) * 1.6)) * (1. - .5 * u_rib3.w)
+                   + .35 * exp(-pow(d2 / (soft * .9), 2.));
+      layer2 *= .55 * u_rib3.z * step(0., d) * channel * (.4 + .6 * lf(X * .9 + 2., T * .6, 41.));
+      float asymShape = (d < 0. ? beyond : inner) + .9 * edgeGlow + layer2;
       float symShape = exp(-u * u * 1.2);
       float shape = mix(symShape, asymShape, asym) * (1. - smoothstep(1.05, 1.6, abs(u)));
       // edge-on stretches are denser, so they shine a little more
@@ -481,6 +497,7 @@ precision highp float;
 uniform sampler2D u_light, u_glow, u_veil, u_arcs; uniform vec2 u_res, u_gpx, u_vpx; uniform float u_time, u_exposure, u_lumin, u_glowAmt, u_veilAmt, u_trailAmt, u_arcOn; uniform vec3 u_base;
 // which layers are shown (trails, arcs, veil, glow); for isolating them
 uniform vec4 u_show;
+uniform float u_compress; // SHEER: highlight compression (0 = off)
 out vec4 o;
 float hash(vec2 p){ uvec2 q = uvec2(ivec2(floor(p))) * uvec2(1597334673U, 3812015801U); uint n = (q.x ^ q.y) * 1597334673U; return float(n) * (1. / 4294967295.); }
 void main(){
@@ -517,11 +534,18 @@ void main(){
     float vl = dot(V, vec3(.3, .59, .11));
     L += V * smoothstep(.004, .05, vl) * u_veilAmt * u_show.z; // LAYER 3, veil
   }
+  // SHEER: compress the brightest light (above a knee) by luminance only, so
+  // the brightest regions keep their colour and detail instead of burning
+  // out to white
+  if (u_compress > 0.) {
+    float lm = dot(L, vec3(.3, .59, .11)), k = .45;
+    if (lm > k) L *= (k + (lm - k) / (1. + (lm - k) * u_compress * 2.)) / lm;
+  }
   // (stars are drawn afterwards as small points; see STAR_VS/STAR_FS)
   vec3 tm = 1. - exp(-L * u_exposure);
   // where light piles up on a crest it warms toward soft white
   float crest = smoothstep(.45, 1., dot(tm, vec3(.3, .59, .11)));
-  tm = mix(tm, vec3(1., .93, .82) * max(tm.r, max(tm.g, tm.b)), crest * .55);
+  tm = mix(tm, vec3(1., .93, .82) * max(tm.r, max(tm.g, tm.b)), crest * .55 * (1. - .7 * u_compress));
   vec3 col = u_base + tm;
   float gf = floor(u_time * 12.);
   float g = hash(gl_FragCoord.xy + fract(gf * .618) * vec2(311., 173.) + vec2(mod(gf, 97.), 0.)) - .5;
@@ -637,11 +661,16 @@ void main(){
     // tuned + the experimental asymmetric ribbon profile (the default)
     curtain:    { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25,
                   ribbon: 1, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8 },
+    // curtain + sheer-fabric interior (the default)
+    sheer:      { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25,
+                  ribbon: 1, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 3.3,
+                  channels: 0.55, channelScale: 2.2, layers: 0.7, clarity: 0.5, compress: 0.6 },
   };
   // ribbon profile settings default to off, so older presets look as they did
-  const RIBBON_OFF = { ribbon: 0, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8 };
+  const RIBBON_OFF = { ribbon: 0, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8,
+                       channels: 0, channelScale: 2.2, layers: 0, clarity: 0, compress: 0 };
   for (const k in RENDER_PRESETS) RENDER_PRESETS[k] = { ...RIBBON_OFF, ...RENDER_PRESETS[k] };
-  const DEFAULT_PRESET = 'curtain';
+  const DEFAULT_PRESET = 'sheer';
   const LAYERS = ['all', 'trails', 'arcs', 'veil', 'glow'];
 
   class Waves {
@@ -1218,6 +1247,7 @@ void main(){
       gl.uniform4f(P.u.u_rib1, this.guides ? R.ribbon : 0, R.asym, R.widthVar, R.edgeSoft);
       gl.uniform4f(P.u.u_rib2, R.falloff, R.densityVar, R.dissolve, R.twist);
       gl.uniform1f(P.u.u_ribGain, R.gain);
+      gl.uniform4f(P.u.u_rib3, R.channels, R.channelScale, R.layers, R.clarity);
       gl.uniform1f(P.u.u_strands, Math.max(2, M.strands));
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension));
       gl.uniform1f(P.u.u_size, 2.4 * this.dpr);                 // thicker lines
@@ -1302,6 +1332,7 @@ void main(){
       gl.uniform1f(P.u.u_lumin, lum2);
       gl.uniform1f(P.u.u_glowAmt, (0.15 + 0.55 * lum2) * R.glow);
       gl.uniform1f(P.u.u_trailAmt, R.trailOpacity);
+      gl.uniform1f(P.u.u_compress, R.compress);
       gl.uniform1f(P.u.u_arcOn, this.silk && R.silkBright > 0 ? 1 : 0);
       const ly = LAYERS[this.layer];
       gl.uniform4f(P.u.u_show, ly === 'all' || ly === 'trails' ? 1 : 0, ly === 'all' || ly === 'arcs' ? 1 : 0,
@@ -1363,6 +1394,7 @@ void main(){
         ['silkBright', 0, 3, 0.02], ['stride', 1, 12, 1], ['len', 0.02, 0.25, 0.01], ['veil', 0, 2, 0.05], ['glow', 0, 3, 0.05],
         ['ribbon', 0, 1, 0.05], ['asym', 0, 1, 0.05], ['widthVar', 0, 1, 0.05], ['edgeSoft', 0.03, 1, 0.01],
         ['falloff', 0.5, 4, 0.1], ['densityVar', 0, 1, 0.05], ['dissolve', 0, 0.8, 0.02], ['twist', 0, 2.5, 0.05], ['gain', 0.5, 4, 0.05],
+        ['channels', 0, 1, 0.05], ['channelScale', 0.5, 5, 0.1], ['layers', 0, 1.5, 0.05], ['clarity', 0, 1, 0.05], ['compress', 0, 1.5, 0.05],
       ];
       const box = document.createElement('div');
       box.style.cssText = 'position:fixed;top:12px;left:12px;z-index:9;padding:10px 12px;background:rgba(10,10,16,.8);color:#ddd;font:12px Inter,system-ui,sans-serif;border-radius:6px;line-height:1.9';
@@ -1384,7 +1416,7 @@ void main(){
       sel.addEventListener('change', () => { this.layer = +sel.value; });
       const pre = document.createElement('select');
       Object.keys(RENDER_PRESETS).forEach((n) => pre.add(new Option('preset: ' + n, n)));
-      pre.value = Object.keys(RENDER_PRESETS).find((n) => ['trailBase', 'veil', 'ribbon'].every((k) => RENDER_PRESETS[n][k] === R[k])) || DEFAULT_PRESET;
+      pre.value = Object.keys(RENDER_PRESETS).find((n) => ['trailBase', 'veil', 'ribbon', 'layers'].every((k) => RENDER_PRESETS[n][k] === R[k])) || DEFAULT_PRESET;
       pre.addEventListener('change', () => { Object.assign(R, RENDER_PRESETS[pre.value]); this._devSync(); });
       box.append(sel, document.createElement('br'), pre);
       this._devSync = () => {
