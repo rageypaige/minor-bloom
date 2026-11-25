@@ -313,38 +313,46 @@ void main(){
       float face = cos(th);
       // width along the length (a fraction of the band), times how much of
       // the ribbon faces the viewer: edge-on it narrows to a fine line
-      float width = mix(1., mix(.35, 1.2, lf(X, T, 1.)), wv) * mix(1., .22 + .78 * abs(face), tw > 0. ? 1. : 0.);
+      float width = mix(1., mix(.35, 1.2, lf(X, T, 1.)), wv) * mix(1., .55 + .45 * abs(face), tw > 0. ? 1. : 0.);
       float u = gd / max(width, .05);                 // -1..1 across the visible ribbon
-      // the luminous edge: on one side, migrating across as it twists
-      float side = clamp(face * 5., -1., 1.);         // which way the ribbon faces
-      float e = mix(.9, .9 * sin(th + 1.57), tw > 0. ? .35 : 0.) * side;
-      float d = (e - u) * sign(e + 1e-4);             // 0 at the edge, growing inward
-      float beyond = exp(-pow(max(-d, 0.) / soft, 2.));                 // crisp outside the edge
-      float inner = exp(-pow(max(d, 0.) / 1.5, fall) * 1.4);           // nonlinear falloff to darkness
-      float edgeGlow = exp(-pow(d / (soft * .6), 2.));                   // concentrated bright edge
-      // SHEER FABRIC. The interior turns more transparent while the edge
-      // stays defined; darker translucent channels run through the lit
-      // material; and a second, fainter sheet overlaps inside the first, its
-      // own soft edge offset from the main one. All slow and coherent.
-      float interior = smoothstep(.05, .55, d);       // 0 at the edge, 1 inside
-      float chPh = u * 3.14159 * u_rib3.y + .9 * sin(X * .8 + T * .04) + 6.28 * lf(X * .6, T * .5, 21.);
-      float channel = 1. - u_rib3.x * smoothstep(.45, .95, .5 + .5 * sin(chPh)) * interior;
-      inner *= (1. - .6 * u_rib3.w * interior) * channel;
-      float sgn = sign(e + 1e-4);
-      float e2 = e - sgn * (.5 + .4 * lf(X * 1.1, T * .7, 31.));   // the overlapping layer's edge
-      float d2 = (e2 - u) * sgn;
-      float layer2 = (d2 < 0. ? exp(-pow(-d2 / (soft * 1.6), 2.)) : exp(-pow(d2 / 1.1, fall) * 1.6)) * (1. - .5 * u_rib3.w)
-                   + .35 * exp(-pow(d2 / (soft * .9), 2.));
-      layer2 *= .55 * u_rib3.z * step(0., d) * channel * (.4 + .6 * lf(X * .9 + 2., T * .6, 41.));
-      float asymShape = (d < 0. ? beyond : inner) + .9 * edgeGlow + layer2;
+      // the luminous edge sits on the side the ribbon faces. Rather than
+      // flipping sides where the ribbon turns edge-on (which left a seam),
+      // both orientations are computed and blended gradually over a long
+      // stretch, so the edge migrates smoothly across.
+      float wPos = smoothstep(-.7, .7, face);
+      float asymShape = 0.;
+      for (int k = 0; k < 2; k++) {
+        float sg = k == 0 ? 1. : -1.;
+        float wk = k == 0 ? wPos : 1. - wPos;
+        if (wk < .001) continue;
+        float e = sg * (.9 - .3 * (1. - abs(face)) * (tw > 0. ? 1. : 0.));
+        float d = (e - u) * sg;                         // 0 at the edge, growing inward
+        float beyond = exp(-pow(max(-d, 0.) / soft, 2.));                 // crisp outside the edge
+        float inner = exp(-pow(max(d, 0.) / 1.5, fall) * 1.4);           // nonlinear falloff to darkness
+        float edgeGlow = exp(-pow(d / (soft * .6), 2.));                   // concentrated bright edge
+        // SHEER FABRIC. The interior turns more transparent while the edge
+        // stays defined; darker translucent channels run through the lit
+        // material; and a second, fainter sheet overlaps inside the first,
+        // its own soft edge offset from the main one. All slow and coherent.
+        float interior = smoothstep(.05, .55, d);       // 0 at the edge, 1 inside
+        float chPh = u * 3.14159 * u_rib3.y + .9 * sin(X * .8 + T * .04) + 6.28 * lf(X * .6, T * .5, 21.);
+        float channel = 1. - u_rib3.x * smoothstep(.45, .95, .5 + .5 * sin(chPh)) * interior;
+        inner *= (1. - .6 * u_rib3.w * interior) * channel;
+        float e2 = e - sg * (.5 + .4 * lf(X * 1.1, T * .7, 31.));   // the overlapping layer's edge
+        float d2 = (e2 - u) * sg;
+        float layer2 = (d2 < 0. ? exp(-pow(-d2 / (soft * 1.6), 2.)) : exp(-pow(d2 / 1.1, fall) * 1.6)) * (1. - .5 * u_rib3.w)
+                     + .35 * exp(-pow(d2 / (soft * .9), 2.));
+        layer2 *= .55 * u_rib3.z * smoothstep(-.1, .2, d) * channel * (.4 + .6 * lf(X * .9 + 2., T * .6, 41.));
+        asymShape += wk * ((d < 0. ? beyond : inner) + .9 * edgeGlow + layer2);
+      }
       float symShape = exp(-u * u * 1.2);
       float shape = mix(symShape, asymShape, asym) * (1. - smoothstep(1.05, 1.6, abs(u)));
-      // edge-on stretches are denser, so they shine a little more
-      shape *= inversesqrt(max(width, .2)) * .8;
+      // narrower stretches shine only slightly more (strong boosts made knots)
+      shape *= inversesqrt(max(width, .6)) * .85;
       // smooth bands of density across the width
       shape *= mix(1., .3 + 1.1 * lf(X * 1.2 + u * 1.9, T * .8, 9.), dv);
       // some stretches dissolve into darkness, others stay clearly defined
-      if (diss > 0.) shape *= smoothstep(diss - .18, diss + .18, lf(X * .85, T * .6, 13.));
+      if (diss > 0.) shape *= mix(.25, 1., smoothstep(diss - .3, diss + .3, lf(X * .85, T * .6, 13.)));
       v_a *= mix(1., shape * u_ribGain, u_rib1.x);  // (gain restores the light the profile takes away)
     }
     expr = exp(-gd * gd * 1.6) * (.6 + 1.4 * (1. - gPinch(rg.x)));
