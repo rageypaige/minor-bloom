@@ -583,12 +583,16 @@ void main(){
   //                  1 = full) by brightening the particles, not lengthening trails
   //   silkBright/stride/len: the silk arc layer (silkBright 0 = off)
   //   veil, glow:    the atmospheric veil and the soft glow
-  // ?render=baseline restores the previous look; ?dev shows sliders; L cycles
+  // ?render=baseline / shortTrails / tuned picks a preset (tuned is the default); ?dev shows sliders; L cycles
   // through viewing each layer on its own.
   const RENDER_PRESETS = {
     baseline:   { trailBase: 0.18, trailVol: 0.45, trailOpacity: 1, comp: 0, silkBright: 0.2, stride: 4, len: 0.11, veil: 0.2, glow: 1 },
-    experiment: { trailBase: 0.04, trailVol: 0.12, trailOpacity: 0.75, comp: 0.6, silkBright: 0, stride: 4, len: 0.11, veil: 0.6, glow: 1 },
+    shortTrails: { trailBase: 0.04, trailVol: 0.12, trailOpacity: 0.75, comp: 0.6, silkBright: 0, stride: 4, len: 0.11, veil: 0.6, glow: 1 },
+    // Paige's tuning (the default): long, faint trails; short, bright silk
+    // strokes from a sparse set of particles; a strong veil and glow
+    tuned:      { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25 },
   };
+  const DEFAULT_PRESET = 'tuned';
   const LAYERS = ['all', 'trails', 'arcs', 'veil', 'glow'];
 
   class Waves {
@@ -600,7 +604,7 @@ void main(){
       // with the M key so it can be compared on the very same particles
       this.silk = !!opts.silk;
       const q = new URLSearchParams(location.search);
-      this.R = { ...RENDER_PRESETS[q.get('render') === 'baseline' ? 'baseline' : 'experiment'] };
+      this.R = { ...RENDER_PRESETS[RENDER_PRESETS[q.get('render')] ? q.get('render') : DEFAULT_PRESET] };
       this.layer = Math.max(0, LAYERS.indexOf(q.get('layer') || 'all'));
       window.addEventListener('keydown', (e) => {
         if ((e.key === 'l' || e.key === 'L') && !(e.target instanceof HTMLInputElement)) {
@@ -1303,8 +1307,8 @@ void main(){
     _devPanel() {
       const R = this.R;
       const specs = [
-        ['trailBase', 0, 0.4, 0.01], ['trailVol', 0, 0.8, 0.01], ['trailOpacity', 0, 1.5, 0.05], ['comp', 0, 1, 0.05],
-        ['silkBright', 0, 1, 0.02], ['stride', 1, 12, 1], ['len', 0.02, 0.25, 0.01], ['veil', 0, 2, 0.05], ['glow', 0, 3, 0.05],
+        ['trailBase', 0, 1, 0.01], ['trailVol', 0, 1.2, 0.01], ['trailOpacity', 0, 1.5, 0.05], ['comp', 0, 1, 0.05],
+        ['silkBright', 0, 3, 0.02], ['stride', 1, 12, 1], ['len', 0.02, 0.25, 0.01], ['veil', 0, 2, 0.05], ['glow', 0, 3, 0.05],
       ];
       const box = document.createElement('div');
       box.style.cssText = 'position:fixed;top:12px;left:12px;z-index:9;padding:10px 12px;background:rgba(10,10,16,.8);color:#ddd;font:12px Inter,system-ui,sans-serif;border-radius:6px;line-height:1.9';
@@ -1326,7 +1330,7 @@ void main(){
       sel.addEventListener('change', () => { this.layer = +sel.value; });
       const pre = document.createElement('select');
       Object.keys(RENDER_PRESETS).forEach((n) => pre.add(new Option('preset: ' + n, n)));
-      pre.value = R.trailBase === RENDER_PRESETS.baseline.trailBase ? 'baseline' : 'experiment';
+      pre.value = Object.keys(RENDER_PRESETS).find((n) => RENDER_PRESETS[n].trailBase === R.trailBase && RENDER_PRESETS[n].veil === R.veil) || DEFAULT_PRESET;
       pre.addEventListener('change', () => { Object.assign(R, RENDER_PRESETS[pre.value]); this._devSync(); });
       box.append(sel, document.createElement('br'), pre);
       this._devSync = () => {

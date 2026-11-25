@@ -72,8 +72,9 @@ phone with **audio file**.
   length, trail opacity, brightness make-up for short trails, the silk arcs
   (brightness, stride, length), the veil and the glow; **L** (or
   `?layer=trails|arcs|veil|glow`) shows each rendering layer on its own.
-  The current look is the `experiment` preset (short trails, no silk arcs,
-  a stronger veil); `?render=baseline` restores the previous one. These
+  The default is the `tuned` preset (long, faint trails; short, bright silk
+  strokes from a sparse set of particles; a strong veil and glow).
+  `?render=baseline` and `?render=shortTrails` show the earlier looks. These
   change only how the light is drawn, never how the particles move.
 - **Unguided particle waves**, at
   [paigelatimer.ca/minor-bloom/?style=waves](https://paigelatimer.ca/minor-bloom/?style=waves): tens of thousands of particles of light
