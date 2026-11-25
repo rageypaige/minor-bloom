@@ -407,7 +407,7 @@ void main(){
   // STORMY / RESTLESS: occasional luminous accent strands
   lit += u_colAcc * v_acc * u_accent * 4.;
   // signature filaments hold a little more of their own colour's light
-  lit = mix(lit, mix(lit, mix(col, vec3(1., .97, .93), .3) * 1.3, .5), v_sig);
+  lit = mix(lit, col * 1.25, v_sig);
   o = vec4(lit * u_bright * v_a * disc, 1.);
 }`;
 
@@ -559,11 +559,10 @@ void main(){
   // SILK material tuning (rendering only)
   const SILK = {
     lineW: 0.32,  // half-width of a filament line, in CSS pixels (x tier size)
-    bright: 1.6,   // light each line deposits
-    trail: 0.6,   // trails (shorter: the lines show the ribbon's current shape)
-    stride: 3,    // one stroke per this many particles (cost)
+    bright: 0.45,  // light each arc adds on top of the original points
+    stride: 4,    // one stroke per this many particles (cost)
     len: 0.11,    // length of each particle's arc of light (screen heights)
-    veil: 1.1,    // strength of the soft atmospheric veil
+    veil: 0.45,   // strength of the soft atmospheric veil
   };
 
   class Waves {
@@ -1083,17 +1082,20 @@ void main(){
       gl.uniform1i(P.u.u_prev, 0);
       gl.uniform2f(P.u.u_res, lOut.w, lOut.h);
       // VOLUME: louder music leaves longer, silkier trails
-      gl.uniform1f(P.u.u_keep, Math.exp(-dt / ((0.18 + 0.45 * vol) * M.trail * (this.silk ? SILK.trail : 1))));  // MOOD: soft or sharp
+      gl.uniform1f(P.u.u_keep, Math.exp(-dt / ((0.18 + 0.45 * vol) * M.trail)));  // MOOD: soft or sharp
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.bindVertexArray(this.vao);
-      P = this.silk ? this.pSeg : this.pPts;
+      // SILK: the original points stay as they are; the silk arcs are a
+      // second, gentler layer of the same particles drawn on top of them
+      for (const isSeg of this.silk ? [false, true] : [false]) {
+      P = isSeg ? this.pSeg : this.pPts;
       gl.useProgram(P.p);
       gl.bindTexture(gl.TEXTURE_2D, this.state[0].tex);
       gl.uniform1i(P.u.u_state, 0);
-      if (this.silk) {
+      if (isSeg) {
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.tan.tex);
         gl.uniform1i(P.u.u_tan, 1);
@@ -1110,7 +1112,7 @@ void main(){
       gl.uniform1f(P.u.u_ang, this.ang);
       gl.uniform1f(P.u.u_irid, this.guides ? GUIDE.irid : 0);
       this._setGuide(P);
-      gl.uniform1f(P.u.u_mat, this.silk ? 1 : 0);
+      gl.uniform1f(P.u.u_mat, isSeg ? 1 : 0);
       gl.uniform1f(P.u.u_strands, Math.max(2, M.strands));
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension));
       gl.uniform1f(P.u.u_size, 2.4 * this.dpr);                 // thicker lines
@@ -1126,12 +1128,13 @@ void main(){
       const per = (98304 / (this.PW * this.PH)) * (this.idle ? 0.006 : 0.0085 + 0.013 * vol);
       // MOOD: luminosity (sparser moods draw fewer particles, each a touch brighter)
       gl.uniform1f(P.u.u_bright, per * dt * 60 * M.light / Math.sqrt(Math.max(0.3, M.visible)));
-      if (this.silk) {
+      if (isSeg) {
         // lines deposit light once per pass, not once per frame
         gl.uniform1f(P.u.u_bright, SILK.bright * per * M.light / Math.sqrt(Math.max(0.3, M.visible)));
         gl.uniform1i(P.u.u_stride, SILK.stride);
         gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 18, Math.floor(this.PW * this.PH / SILK.stride));
       } else gl.drawArrays(gl.POINTS, 0, this.PW * this.PH);
+      }
       gl.disable(gl.BLEND);
       gl.bindVertexArray(null);
       this.light = [lOut, lIn];
