@@ -67,7 +67,14 @@ phone with **audio file**.
   up into a tangle), adding smooth threads that follow the
   ribbon's current shape, a few brighter signature strands and a soft veil
   of coloured light around them. Rendering only: the movement is identical.
-  Tuning lives in the `SILK` table in `js/waves.js`.
+  Tuning lives in the `RENDER_PRESETS` table in `js/waves.js`.
+- **Rendering development controls**: `?dev` shows sliders for trail
+  length, trail opacity, brightness make-up for short trails, the silk arcs
+  (brightness, stride, length), the veil and the glow; **L** (or
+  `?layer=trails|arcs|veil|glow`) shows each rendering layer on its own.
+  The current look is the `experiment` preset (short trails, no silk arcs,
+  a stronger veil); `?render=baseline` restores the previous one. These
+  change only how the light is drawn, never how the particles move.
 - **Unguided particle waves**, at
   [paigelatimer.ca/minor-bloom/?style=waves](https://paigelatimer.ca/minor-bloom/?style=waves): tens of thousands of particles of light
   stream along flowing wave lines, layering into silky sheets in a night sky.

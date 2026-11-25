@@ -435,7 +435,9 @@ void main(){
   // 3. Tone map, warm crests, stars and film grain.
   const OUT = `#version 300 es
 precision highp float;
-uniform sampler2D u_light, u_glow, u_veil, u_arcs; uniform vec2 u_res, u_gpx, u_vpx; uniform float u_time, u_exposure, u_lumin, u_glowAmt, u_veilAmt; uniform vec3 u_base;
+uniform sampler2D u_light, u_glow, u_veil, u_arcs; uniform vec2 u_res, u_gpx, u_vpx; uniform float u_time, u_exposure, u_lumin, u_glowAmt, u_veilAmt, u_trailAmt, u_arcOn; uniform vec3 u_base;
+// which layers are shown (trails, arcs, veil, glow); for isolating them
+uniform vec4 u_show;
 out vec4 o;
 float hash(vec2 p){ uvec2 q = uvec2(ivec2(floor(p))) * uvec2(1597334673U, 3812015801U); uint n = (q.x ^ q.y) * 1597334673U; return float(n) * (1. / 4294967295.); }
 void main(){
@@ -445,6 +447,9 @@ void main(){
   // up faster than it adds; intense music reveals this, quiet music doesn't
   float ll = dot(L, vec3(.3, .59, .11));
   L *= 1. + u_lumin * 2.4 * smoothstep(.1, .8, ll);
+  // LAYER 1, particle trails: weighted (and shown or hidden) on their own
+  vec3 T = L;
+  L = T * u_trailAmt * u_show.x;
   // SOFT DIFFUSED LIGHT around the most luminous filaments (wide, faint)
   vec3 G = vec3(0.);
   for (int i = 0; i < 12; i++) {
@@ -452,8 +457,8 @@ void main(){
     G += texture(u_glow, uv + vec2(cos(a), sin(a)) * rad * u_gpx).rgb;
   }
   G += texture(u_glow, uv).rgb * 2.;
-  L += G / 14. * u_glowAmt;
-  if (u_veilAmt > 0.) L += texture(u_arcs, uv).rgb;   // SILK: this frame's arcs
+  L += G / 14. * u_glowAmt * u_show.w;                  // LAYER 4, glow
+  if (u_arcOn > 0.) L += texture(u_arcs, uv).rgb * u_show.y; // LAYER 2, SILK: this frame's arcs
   // SILK: ATMOSPHERIC VEIL. A wide, faint translucent haze of coloured light
   // made from the filaments themselves (no fog of its own): it gathers
   // where they are dense and falls away fast where they aren't, so the
@@ -467,7 +472,7 @@ void main(){
     }
     V /= 14.;
     float vl = dot(V, vec3(.3, .59, .11));
-    L += V * smoothstep(.004, .05, vl) * u_veilAmt;
+    L += V * smoothstep(.004, .05, vl) * u_veilAmt * u_show.z; // LAYER 3, veil
   }
   // (stars are drawn afterwards as small points; see STAR_VS/STAR_FS)
   vec3 tm = 1. - exp(-L * u_exposure);
@@ -566,11 +571,25 @@ void main(){
   // SILK material tuning (rendering only)
   const SILK = {
     lineW: 0.32,  // half-width of a filament line, in CSS pixels (x tier size)
-    bright: 0.2,   // light each arc adds on top of the original points
-    stride: 4,    // one stroke per this many particles (cost)
-    len: 0.11,    // length of each particle's arc of light (screen heights)
-    veil: 0.2,    // strength of the soft atmospheric veil
+    // (arc brightness, stride, length and the veil now live in
+    // RENDER_PRESETS below, so they can be adjusted live with ?dev)
   };
+
+  // RENDERING DEVELOPMENT CONTROLS (drawing only: the simulation, guidance,
+  // particle counts, flow and musical response are untouched).
+  //   trailBase/trailVol: how long trails last, seconds: (base + vol * loudness) * mood
+  //   trailOpacity:  how much the particle trails count in the final image
+  //   comp:          make up for light lost to shorter trails (0 = none,
+  //                  1 = full) by brightening the particles, not lengthening trails
+  //   silkBright/stride/len: the silk arc layer (silkBright 0 = off)
+  //   veil, glow:    the atmospheric veil and the soft glow
+  // ?render=baseline restores the previous look; ?dev shows sliders; L cycles
+  // through viewing each layer on its own.
+  const RENDER_PRESETS = {
+    baseline:   { trailBase: 0.18, trailVol: 0.45, trailOpacity: 1, comp: 0, silkBright: 0.2, stride: 4, len: 0.11, veil: 0.2, glow: 1 },
+    experiment: { trailBase: 0.04, trailVol: 0.12, trailOpacity: 0.75, comp: 0.6, silkBright: 0, stride: 4, len: 0.11, veil: 0.6, glow: 1 },
+  };
+  const LAYERS = ['all', 'trails', 'arcs', 'veil', 'glow'];
 
   class Waves {
     constructor(canvas, opts = {}) {
@@ -580,6 +599,17 @@ void main(){
       // the 'silk' rendering material (see PTS_VS and OUT); toggled live
       // with the M key so it can be compared on the very same particles
       this.silk = !!opts.silk;
+      const q = new URLSearchParams(location.search);
+      this.R = { ...RENDER_PRESETS[q.get('render') === 'baseline' ? 'baseline' : 'experiment'] };
+      this.layer = Math.max(0, LAYERS.indexOf(q.get('layer') || 'all'));
+      window.addEventListener('keydown', (e) => {
+        if ((e.key === 'l' || e.key === 'L') && !(e.target instanceof HTMLInputElement)) {
+          this.layer = (this.layer + 1) % LAYERS.length;
+          this._flag('layer: ' + LAYERS[this.layer]);
+          if (this._devSync) this._devSync();
+        }
+      });
+      if (q.has('dev')) this._devPanel();
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
       if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('Float render targets are not available');
@@ -1092,7 +1122,10 @@ void main(){
       gl.uniform1i(P.u.u_prev, 0);
       gl.uniform2f(P.u.u_res, lOut.w, lOut.h);
       // VOLUME: louder music leaves longer, silkier trails
-      const trailTau = (0.18 + 0.45 * vol) * M.trail;
+      const R = this.R;
+      const trailTau = (R.trailBase + R.trailVol * vol) * M.trail;
+      // (the previous trail length, used only to keep overall light level)
+      const baseTau = (0.18 + 0.45 * vol) * M.trail;
       gl.uniform1f(P.u.u_keep, Math.exp(-dt / trailTau));  // MOOD: soft or sharp
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
@@ -1115,7 +1148,7 @@ void main(){
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.tan.tex);
         gl.uniform1i(P.u.u_tan, 1);
-        gl.uniform1f(P.u.u_len, SILK.len);
+        gl.uniform1f(P.u.u_len, R.len);
         gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust);
         gl.activeTexture(gl.TEXTURE0);
         gl.uniform2f(P.u.u_res, lOut.w, lOut.h);
@@ -1143,13 +1176,17 @@ void main(){
       // brightness per particle: louder is brighter; fewer particles each brighter
       const per = (98304 / (this.PW * this.PH)) * (this.idle ? 0.006 : 0.0085 + 0.013 * vol);
       // MOOD: luminosity (sparser moods draw fewer particles, each a touch brighter)
-      gl.uniform1f(P.u.u_bright, per * dt * 60 * M.light / Math.sqrt(Math.max(0.3, M.visible)));
+      // shorter trails hold less light; brighten the particles to make up
+      // for it (by R.comp) rather than letting their trajectories linger
+      const comp = Math.pow(baseTau / Math.max(1e-3, trailTau), R.comp);
+      gl.uniform1f(P.u.u_bright, comp * per * dt * 60 * M.light / Math.sqrt(Math.max(0.3, M.visible)));
       if (isSeg) {
         // lines deposit light once per pass, not once per frame
         // (no trails here, so each arc carries what a trail would have built up)
-        gl.uniform1f(P.u.u_bright, SILK.bright * per * trailTau * 60 * M.light / Math.sqrt(Math.max(0.3, M.visible)));
-        gl.uniform1i(P.u.u_stride, SILK.stride);
-        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 18, Math.floor(this.PW * this.PH / SILK.stride));
+        gl.uniform1f(P.u.u_bright, R.silkBright * per * baseTau * 60 * M.light / Math.sqrt(Math.max(0.3, M.visible)));
+        const stride = Math.max(1, Math.round(R.stride));
+        gl.uniform1i(P.u.u_stride, stride);
+        if (R.silkBright > 0) gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 18, Math.floor(this.PW * this.PH / stride));
       } else gl.drawArrays(gl.POINTS, 0, this.PW * this.PH);
       }
       gl.disable(gl.BLEND);
@@ -1200,14 +1237,19 @@ void main(){
       gl.bindTexture(gl.TEXTURE_2D, this.arcs.tex);
       gl.uniform1i(P.u.u_arcs, 3);
       gl.uniform2f(P.u.u_vpx, 1 / this.veil.w, 1 / this.veil.h);
-      gl.uniform1f(P.u.u_veilAmt, this.silk ? SILK.veil * (0.7 + 0.6 * (this.lumin ?? 0.2)) : 0);
+      gl.uniform1f(P.u.u_veilAmt, this.silk ? R.veil * (0.7 + 0.6 * (this.lumin ?? 0.2)) : 0);
       gl.activeTexture(gl.TEXTURE0);
       gl.uniform2f(P.u.u_res, this.c.width, this.c.height);
       gl.uniform2f(P.u.u_gpx, 1 / this.glow.w, 1 / this.glow.h);
       gl.uniform1f(P.u.u_time, this.t);
       const lum2 = this.lumin ?? 0.2;
       gl.uniform1f(P.u.u_lumin, lum2);
-      gl.uniform1f(P.u.u_glowAmt, 0.15 + 0.55 * lum2);
+      gl.uniform1f(P.u.u_glowAmt, (0.15 + 0.55 * lum2) * R.glow);
+      gl.uniform1f(P.u.u_trailAmt, R.trailOpacity);
+      gl.uniform1f(P.u.u_arcOn, this.silk && R.silkBright > 0 ? 1 : 0);
+      const ly = LAYERS[this.layer];
+      gl.uniform4f(P.u.u_show, ly === 'all' || ly === 'trails' ? 1 : 0, ly === 'all' || ly === 'arcs' ? 1 : 0,
+        ly === 'all' || ly === 'veil' ? 1 : 0, ly === 'all' || ly === 'glow' ? 1 : 0);
       // quiet passages sit lower; intense ones open up
       gl.uniform1f(P.u.u_exposure, 0.95 + 0.75 * lum2);
       const tint = this.colA.map((v) => v * 0.02);
@@ -1241,6 +1283,57 @@ void main(){
         gl.disable(gl.BLEND);
         gl.bindVertexArray(null);
       }
+    }
+
+    _flag(text) {
+      let tag = document.getElementById('render-tag');
+      if (!tag) {
+        tag = document.createElement('p');
+        tag.id = 'render-tag';
+        tag.style.cssText = 'position:fixed;top:36px;right:20px;margin:0;font-size:15px;color:var(--ink-soft);transition:opacity .8s;pointer-events:none';
+        document.body.appendChild(tag);
+      }
+      tag.textContent = text;
+      tag.style.opacity = 1;
+      clearTimeout(tag._t);
+      tag._t = setTimeout(() => { tag.style.opacity = 0; }, 1600);
+    }
+
+    // ?dev: a small panel of sliders for the rendering controls above
+    _devPanel() {
+      const R = this.R;
+      const specs = [
+        ['trailBase', 0, 0.4, 0.01], ['trailVol', 0, 0.8, 0.01], ['trailOpacity', 0, 1.5, 0.05], ['comp', 0, 1, 0.05],
+        ['silkBright', 0, 1, 0.02], ['stride', 1, 12, 1], ['len', 0.02, 0.25, 0.01], ['veil', 0, 2, 0.05], ['glow', 0, 3, 0.05],
+      ];
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;top:12px;left:12px;z-index:9;padding:10px 12px;background:rgba(10,10,16,.8);color:#ddd;font:12px Inter,system-ui,sans-serif;border-radius:6px;line-height:1.9';
+      const inputs = {};
+      for (const [k, lo, hi, st] of specs) {
+        const row = document.createElement('label');
+        row.style.cssText = 'display:grid;grid-template-columns:88px 120px 40px;gap:6px;align-items:center';
+        const inp = document.createElement('input');
+        Object.assign(inp, { type: 'range', min: lo, max: hi, step: st, value: R[k] });
+        const val = document.createElement('span');
+        val.textContent = R[k];
+        inp.addEventListener('input', () => { R[k] = +inp.value; val.textContent = inp.value; });
+        row.append(k, inp, val);
+        box.append(row);
+        inputs[k] = [inp, val];
+      }
+      const sel = document.createElement('select');
+      LAYERS.forEach((n, i) => sel.add(new Option('view: ' + n, i)));
+      sel.addEventListener('change', () => { this.layer = +sel.value; });
+      const pre = document.createElement('select');
+      Object.keys(RENDER_PRESETS).forEach((n) => pre.add(new Option('preset: ' + n, n)));
+      pre.value = R.trailBase === RENDER_PRESETS.baseline.trailBase ? 'baseline' : 'experiment';
+      pre.addEventListener('change', () => { Object.assign(R, RENDER_PRESETS[pre.value]); this._devSync(); });
+      box.append(sel, document.createElement('br'), pre);
+      this._devSync = () => {
+        sel.value = this.layer;
+        for (const k in inputs) { inputs[k][0].value = R[k]; inputs[k][1].textContent = R[k]; }
+      };
+      document.body.appendChild(box);
     }
 
     // A still of the current moment, for saving.
