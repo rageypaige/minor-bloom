@@ -432,7 +432,7 @@ void main(){
   // 3. Tone map, warm crests, stars and film grain.
   const OUT = `#version 300 es
 precision highp float;
-uniform sampler2D u_light, u_glow, u_veil; uniform vec2 u_res, u_gpx, u_vpx; uniform float u_time, u_exposure, u_lumin, u_glowAmt, u_veilAmt; uniform vec3 u_base;
+uniform sampler2D u_light, u_glow, u_veil, u_arcs; uniform vec2 u_res, u_gpx, u_vpx; uniform float u_time, u_exposure, u_lumin, u_glowAmt, u_veilAmt; uniform vec3 u_base;
 out vec4 o;
 float hash(vec2 p){ uvec2 q = uvec2(ivec2(floor(p))) * uvec2(1597334673U, 3812015801U); uint n = (q.x ^ q.y) * 1597334673U; return float(n) * (1. / 4294967295.); }
 void main(){
@@ -450,6 +450,7 @@ void main(){
   }
   G += texture(u_glow, uv).rgb * 2.;
   L += G / 14. * u_glowAmt;
+  if (u_veilAmt > 0.) L += texture(u_arcs, uv).rgb;   // SILK: this frame's arcs
   // SILK: ATMOSPHERIC VEIL. A wide, faint translucent haze of coloured light
   // made from the filaments themselves (no fog of its own): it gathers
   // where they are dense and falls away fast where they aren't, so the
@@ -659,6 +660,9 @@ void main(){
       this.asp = w / h;
       this.light = [this._tex(this.c.width, this.c.height, 'light'), this._tex(this.c.width, this.c.height, 'light')];
       this.glow = this._tex(Math.max(16, Math.round(this.c.width / 4)), Math.max(16, Math.round(this.c.height / 4)), 'light');
+      // silk arcs are drawn fresh each frame into their own buffer (no trails),
+      // so they show only the ribbon's present shape and never pile up
+      this.arcs = this._tex(this.c.width, this.c.height, 'light');
       this.veil = this._tex(Math.max(8, Math.round(this.c.width / 10)), Math.max(8, Math.round(this.c.height / 10)), 'light');
       for (const L of this.light) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, L.fb);
@@ -1085,7 +1089,8 @@ void main(){
       gl.uniform1i(P.u.u_prev, 0);
       gl.uniform2f(P.u.u_res, lOut.w, lOut.h);
       // VOLUME: louder music leaves longer, silkier trails
-      gl.uniform1f(P.u.u_keep, Math.exp(-dt / ((0.18 + 0.45 * vol) * M.trail)));  // MOOD: soft or sharp
+      const trailTau = (0.18 + 0.45 * vol) * M.trail;
+      gl.uniform1f(P.u.u_keep, Math.exp(-dt / trailTau));  // MOOD: soft or sharp
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
       gl.enable(gl.BLEND);
@@ -1094,6 +1099,11 @@ void main(){
       // SILK: the original points stay as they are; the silk arcs are a
       // second, gentler layer of the same particles drawn on top of them
       for (const isSeg of this.silk ? [false, true] : [false]) {
+      if (isSeg) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.arcs.fb);
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
       P = isSeg ? this.pSeg : this.pPts;
       gl.useProgram(P.p);
       gl.bindTexture(gl.TEXTURE_2D, this.state[0].tex);
@@ -1133,7 +1143,8 @@ void main(){
       gl.uniform1f(P.u.u_bright, per * dt * 60 * M.light / Math.sqrt(Math.max(0.3, M.visible)));
       if (isSeg) {
         // lines deposit light once per pass, not once per frame
-        gl.uniform1f(P.u.u_bright, SILK.bright * per * M.light / Math.sqrt(Math.max(0.3, M.visible)));
+        // (no trails here, so each arc carries what a trail would have built up)
+        gl.uniform1f(P.u.u_bright, SILK.bright * per * trailTau * 60 * M.light / Math.sqrt(Math.max(0.3, M.visible)));
         gl.uniform1i(P.u.u_stride, SILK.stride);
         gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 18, Math.floor(this.PW * this.PH / SILK.stride));
       } else gl.drawArrays(gl.POINTS, 0, this.PW * this.PH);
@@ -1182,6 +1193,9 @@ void main(){
       gl.activeTexture(gl.TEXTURE2);
       gl.bindTexture(gl.TEXTURE_2D, this.veil.tex);
       gl.uniform1i(P.u.u_veil, 2);
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, this.arcs.tex);
+      gl.uniform1i(P.u.u_arcs, 3);
       gl.uniform2f(P.u.u_vpx, 1 / this.veil.w, 1 / this.veil.h);
       gl.uniform1f(P.u.u_veilAmt, this.silk ? SILK.veil * (0.7 + 0.6 * (this.lumin ?? 0.2)) : 0);
       gl.activeTexture(gl.TEXTURE0);

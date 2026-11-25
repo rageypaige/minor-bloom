@@ -17,8 +17,9 @@
   const styleQ = new URLSearchParams(location.search).get('style');
   const wantWaves = styleQ !== 'sky';
   const waveOpts = styleQ === 'waves' ? {} : { mode: 'guides' };
-  // ?material=silk turns on the softer 'silk' light; M toggles it live
-  waveOpts.silk = new URLSearchParams(location.search).get('material') === 'silk';
+  // silk light is the default; ?material=original shows the plain points,
+  // and M toggles between them live
+  waveOpts.silk = new URLSearchParams(location.search).get('material') !== 'original';
   try { atmos = wantWaves && MB.Waves ? new MB.Waves($('#atmos'), waveOpts) : new MB.Atmosphere($('#atmos')); } catch (e) {
     console.warn('Style unavailable:', e);
     if (wantWaves) { try { atmos = new MB.Atmosphere($('#atmos')); } catch (e2) { /* no WebGL2 */ } }

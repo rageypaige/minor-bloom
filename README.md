@@ -60,10 +60,11 @@ phone with **audio file**.
   intimate to expansive and now and then curls over itself, with a faint
   iridescent hue drift. Tuning lives in the `GUIDE` table in `js/waves.js`;
   each variety setting can be set to 0 to turn it off.
-- **Silk light** (try it with `?material=silk`, or press **M** while it plays
-  to switch on the very same particles): the original points stay, and on
-  top of them some particles also draw a faint, fine, tapered arc of light
-  along the wave line they sit on, adding smooth threads that follow the
+- **Silk light** (the default; `?material=original` shows the plain points,
+  and **M** switches between them while it plays): the original points stay,
+  and on top of them some particles also draw a faint, fine, tapered arc of
+  light along the wave line they sit on, fresh each frame (so they never pile
+  up into a tangle), adding smooth threads that follow the
   ribbon's current shape, a few brighter signature strands and a soft veil
   of coloured light around them. Rendering only: the movement is identical.
   Tuning lives in the `SILK` table in `js/waves.js`.
