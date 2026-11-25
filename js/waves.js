@@ -212,21 +212,24 @@ void main(){ o = vec4(texture(u_prev, gl_FragCoord.xy / u_res).rgb * u_keep, 1.)
   const PTS_VS = `#version 300 es
 precision highp float;
 uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_spread, u_visible, u_ang;
+uniform float u_mat, u_strands, u_cross, u_time;
 ${GUIDE_FN}
 uniform vec2 u_center;
-out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp; out vec2 v_pos;
+out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp; out vec2 v_pos; out float v_sig;
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
 void main(){
   ivec2 ij = ivec2(gl_VertexID % u_w, gl_VertexID / u_w);
   vec4 s = texelFetch(u_state, ij, 0);
   float life = 5. + 9. * h1(s.w * 3.1);
-  v_a = smoothstep(0., 2.5, s.z) * (1. - smoothstep(life - 2.5, life, s.z));
+  float env = smoothstep(0., 2.5, s.z) * (1. - smoothstep(life - 2.5, life, s.z));
+  v_a = env;
   // thin out softly toward the edge of the spread
   vec2 cn = abs((s.xy - u_center) / vec2(u_spread * u_asp * .6, u_spread * .6));
   float r = pow(pow(cn.x, 4.) + pow(cn.y, 4.), .25);
   v_a *= 1. - smoothstep(.7, 1.1, r);
   v_s = s.w;
   v_pos = s.xy;
+  float expr = 1.; // how expressive this spot is (the guide's core and folds)
   if (u_guide > .5) {
     // the core of the gesture is brightest; filaments that wander out from
     // it are fainter; where the ribbon pinches and folds it catches light
@@ -234,6 +237,7 @@ void main(){
     vec2 rg = mat2(ca, sa, -sa, ca) * (s.xy - u_center);
     float gd = gDist(rg) / (u_gBand * .8);
     v_a *= (.3 + .7 * exp(-gd * gd)) * (1. + .7 * (1. - gPinch(rg.x)));
+    expr = exp(-gd * gd * 1.6) * (.6 + 1.4 * (1. - gPinch(rg.x)));
   }
   // TENDER: only some particles are drawn, so the filaments are sparse
   v_a *= step(h1(s.w * 2.9), u_visible);
@@ -250,6 +254,35 @@ void main(){
   float size = layer == 0. ? .75 : layer == 2. ? 1.35 : 1.;
   v_sharp = layer == 0. ? 0. : layer == 2. ? 1. : .55;
   v_a *= layer == 0. ? .45 : layer == 2. ? 1.15 : 1.;
+  v_sig = 0.;
+
+  // SILK MATERIAL (rendering only; the particles move exactly the same).
+  // Three tiers of the same particles: most become fine, faint supporting
+  // filaments with uneven visibility; a few become crisp signature
+  // filaments along the expressive curves; the soft atmospheric veil is
+  // made from all of them in the output pass.
+  if (u_mat > .5) {
+    float sig = step(h1(s.w * 17.3), .06) * step(.5, layer);
+    // supporting filaments: visibility varies by strand lane (so the lanes
+    // are no longer evenly spaced lines), drifting slowly over time, and
+    // per particle; one flow direction and the crossing currents recede,
+    // so intersecting trails stop competing
+    float laneI = floor(h1(s.w * 4.3) * u_strands);
+    float lr = h1(laneI * 7.31 + 1.7);
+    float laneW = smoothstep(.1, .9, lr) * (.55 + .45 * sin(u_time * (.05 + .08 * h1(laneI * 3.1)) + lr * 6.28));
+    float pv = pow(h1(s.w * 8.7), 1.6);
+    float dirW = h1(s.w * 11.3) < .5 ? 1. : .45;
+    float crossW = h1(s.w * 5.9) < u_cross ? .4 : 1.;
+    float support = .5 * (.12 + 1.1 * laneW) * (.35 + .9 * pv) * dirW * crossW;
+    // signature filaments: luminous and sharp, strongest where the
+    // gesture is most expressive; a few stay present even elsewhere
+    float signature = 2.4 * (.2 + .8 * clamp(expr, 0., 1.6));
+    v_a *= mix(support, signature, sig);
+    v_sig = sig;
+    v_sharp = mix(v_sharp * .3, .85, sig);
+    // taper: fine at the start and end of each particle's life
+    size *= mix(.62 * (.55 + .45 * env), 1.45, sig);
+  }
 
   gl_Position = vec4(pos.x / (u_asp * .5), pos.y / .5, 0., 1.);
   gl_PointSize = u_size * size * (.7 + .6 * h1(s.w * 5.3));
@@ -257,7 +290,7 @@ void main(){
   const PTS_FS = `#version 300 es
 precision highp float;
 uniform vec3 u_colA, u_colB, u_colAcc; uniform float u_bright, u_accent, u_lumin, u_shimmer, u_time, u_irid;
-in float v_a; in float v_s; in float v_acc; in float v_layer; in float v_sharp; in vec2 v_pos;
+in float v_a; in float v_s; in float v_acc; in float v_layer; in float v_sharp; in vec2 v_pos; in float v_sig;
 // rotate a colour's hue (YIQ), keeping its brightness
 vec3 hueRot(vec3 c, float a){
   vec3 y = mat3(.299, .596, .211, .587, -.274, -.523, .114, -.322, .312) * c;
@@ -288,6 +321,8 @@ void main(){
   lit *= 1. + u_shimmer * (fl * fl * 2.2 - .55) * step(.5, v_layer);
   // STORMY / RESTLESS: occasional luminous accent strands
   lit += u_colAcc * v_acc * u_accent * 4.;
+  // signature filaments hold a little more of their own colour's light
+  lit = mix(lit, mix(lit, mix(col, vec3(1., .97, .93), .3) * 1.3, .5), v_sig);
   o = vec4(lit * u_bright * v_a * disc, 1.);
 }`;
 
@@ -303,13 +338,13 @@ void main(){
     a += texture(u_light, uv + (vec2(i, j) - 1.5) * u_px * .25).rgb;
   a /= 16.;
   float l = dot(a, vec3(.3, .59, .11));
-  o = vec4(a * smoothstep(u_thresh, u_thresh * 2.5, l), 1.);
+  o = vec4(u_thresh > 0. ? a * smoothstep(u_thresh, u_thresh * 2.5, l) : a, 1.);
 }`;
 
   // 3. Tone map, warm crests, stars and film grain.
   const OUT = `#version 300 es
 precision highp float;
-uniform sampler2D u_light, u_glow; uniform vec2 u_res, u_gpx; uniform float u_time, u_exposure, u_lumin, u_glowAmt; uniform vec3 u_base;
+uniform sampler2D u_light, u_glow, u_veil; uniform vec2 u_res, u_gpx, u_vpx; uniform float u_time, u_exposure, u_lumin, u_glowAmt, u_veilAmt; uniform vec3 u_base;
 out vec4 o;
 float hash(vec2 p){ uvec2 q = uvec2(ivec2(floor(p))) * uvec2(1597334673U, 3812015801U); uint n = (q.x ^ q.y) * 1597334673U; return float(n) * (1. / 4294967295.); }
 void main(){
@@ -327,6 +362,21 @@ void main(){
   }
   G += texture(u_glow, uv).rgb * 2.;
   L += G / 14. * u_glowAmt;
+  // SILK: ATMOSPHERIC VEIL. A wide, faint translucent haze of coloured light
+  // made from the filaments themselves (no fog of its own): it gathers
+  // where they are dense and falls away fast where they aren't, so the
+  // black ground and the negative space stay clean. Sharp detail on top is
+  // untouched (no global blur).
+  if (u_veilAmt > 0.) {
+    vec3 V = texture(u_veil, uv).rgb * 2.;
+    for (int i = 0; i < 12; i++) {
+      float a = float(i) * .5236 + .26, rad = (i % 2 == 0) ? 1.6 : 3.4;
+      V += texture(u_veil, uv + vec2(cos(a), sin(a)) * rad * u_vpx).rgb;
+    }
+    V /= 14.;
+    float vl = dot(V, vec3(.3, .59, .11));
+    L += V * smoothstep(.004, .05, vl) * u_veilAmt;
+  }
   // (stars are drawn afterwards as small points; see STAR_VS/STAR_FS)
   vec3 tm = 1. - exp(-L * u_exposure);
   // where light piles up on a crest it warms toward soft white
@@ -426,6 +476,9 @@ void main(){
       this.c = canvas;
       // 'guides': the original simulation plus soft compositional guidance
       this.guides = opts.mode === 'guides';
+      // the 'silk' rendering material (see PTS_VS and OUT); toggled live
+      // with the M key so it can be compared on the very same particles
+      this.silk = !!opts.silk;
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
       if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('Float render targets are not available');
@@ -506,6 +559,7 @@ void main(){
       this.asp = w / h;
       this.light = [this._tex(this.c.width, this.c.height, 'light'), this._tex(this.c.width, this.c.height, 'light')];
       this.glow = this._tex(Math.max(16, Math.round(this.c.width / 4)), Math.max(16, Math.round(this.c.height / 4)), 'light');
+      this.veil = this._tex(Math.max(8, Math.round(this.c.width / 10)), Math.max(8, Math.round(this.c.height / 10)), 'light');
       for (const L of this.light) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, L.fb);
         gl.clearColor(0, 0, 0, 1);
@@ -928,6 +982,9 @@ void main(){
       gl.uniform1f(P.u.u_ang, this.ang);
       gl.uniform1f(P.u.u_irid, this.guides ? GUIDE.irid : 0);
       this._setGuide(P);
+      gl.uniform1f(P.u.u_mat, this.silk ? 1 : 0);
+      gl.uniform1f(P.u.u_strands, Math.max(2, M.strands));
+      gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension));
       gl.uniform1f(P.u.u_size, 2.4 * this.dpr);                 // thicker lines
       gl.uniform3fv(P.u.u_colA, this.colA);
       gl.uniform3fv(P.u.u_colB, this.colB);
@@ -960,6 +1017,14 @@ void main(){
       gl.uniform2f(P.u.u_px, 1 / this.glow.w, 1 / this.glow.h);
       gl.uniform1f(P.u.u_thresh, 0.16);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      if (this.silk) {
+        // 2d. the atmospheric veil source: all the light, very low resolution
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.veil.fb);
+        gl.viewport(0, 0, this.veil.w, this.veil.h);
+        gl.uniform2f(P.u.u_px, 1 / this.veil.w, 1 / this.veil.h);
+        gl.uniform1f(P.u.u_thresh, 0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
 
       // 3. output
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -975,6 +1040,11 @@ void main(){
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, this.glow.tex);
       gl.uniform1i(P.u.u_glow, 1);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.veil.tex);
+      gl.uniform1i(P.u.u_veil, 2);
+      gl.uniform2f(P.u.u_vpx, 1 / this.veil.w, 1 / this.veil.h);
+      gl.uniform1f(P.u.u_veilAmt, this.silk ? 0.8 + 0.5 * (this.lumin ?? 0.2) : 0);
       gl.activeTexture(gl.TEXTURE0);
       gl.uniform2f(P.u.u_res, this.c.width, this.c.height);
       gl.uniform2f(P.u.u_gpx, 1 / this.glow.w, 1 / this.glow.h);
