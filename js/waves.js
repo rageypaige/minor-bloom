@@ -74,17 +74,7 @@ float gDist(vec2 r){ float sl = gDY(r.x); return (r.y - gY(r.x)) / sqrt(1. + sl 
 // 1 = full width; smaller where the ribbon pinches and turns over
 float gPinch(float x){ return mix(1., .32 + .68 * abs(cos(u_gTw.y * x + u_gTw.z)), u_gTw.x); }`;
 
-  // 1. Move every particle.
-  const SIM = `#version 300 es
-precision highp float;
-uniform sampler2D u_state;
-uniform float u_time, u_dt, u_asp;
-uniform float u_freq, u_warp, u_levels, u_pull, u_flow, u_dust, u_spread, u_bassAmp, u_bassPhase;
-uniform vec2 u_center, u_seedOff; uniform float u_ang, u_thick, u_cross, u_crossAng, u_turb, u_strands, u_deep, u_deepPh, u_loosen;
-uniform vec4 u_rip[4];
-out vec4 o;
-${NOISE}
-${GUIDE_FN}
+  const FIELD_FN = `
 // Long wave lines that run across the screen (not closed loops): the field
 // rises steadily in one direction, and noise bends the lines into waves.
 float field(vec2 p, float ang, vec2 off){
@@ -113,7 +103,20 @@ float field(vec2 p, float ang, vec2 off){
   // the guide itself, which keeps both forces in agreement)
   float gw = u_guide > .5 ? u_gWarp : 1., gs = u_guide > .5 ? u_gSwell : 1.;
   return rise * u_freq * .9 + u_warp * w * gw + swell * gs;
-}
+}`;
+
+  // 1. Move every particle.
+  const SIM = `#version 300 es
+precision highp float;
+uniform sampler2D u_state;
+uniform float u_time, u_dt, u_asp;
+uniform float u_freq, u_warp, u_levels, u_pull, u_flow, u_dust, u_spread, u_bassAmp, u_bassPhase;
+uniform vec2 u_center, u_seedOff; uniform float u_ang, u_thick, u_cross, u_crossAng, u_turb, u_strands, u_deep, u_deepPh, u_loosen;
+uniform vec4 u_rip[4];
+out vec4 o;
+${NOISE}
+${GUIDE_FN}
+${FIELD_FN}
 float life(float seed){ return 5. + 9. * h1(seed * 3.1); }
 void main(){
   vec4 s = texelFetch(u_state, ivec2(gl_FragCoord.xy), 0);
@@ -201,6 +204,38 @@ void main(){
   o = vec4(p, age, seed);
 }`;
 
+  // 2s. SILK: the direction and bend of the wave line each particle is on,
+  // read from the same field the simulation uses (rendering only).
+  const TAN = `#version 300 es
+precision highp float;
+uniform sampler2D u_state;
+uniform float u_time, u_freq, u_warp, u_bassAmp, u_bassPhase, u_deep, u_deepPh, u_ang, u_cross, u_crossAng;
+uniform vec2 u_center, u_seedOff;
+out vec4 o;
+${NOISE}
+${GUIDE_FN}
+${FIELD_FN}
+float gmag;
+vec2 tang(vec2 p, float ang, vec2 off){
+  float e = .003, n = field(p, ang, off);
+  vec2 g = vec2(field(p + vec2(e, 0.), ang, off) - n, field(p + vec2(0., e), ang, off) - n) / e;
+  gmag = length(g);
+  return normalize(vec2(-g.y, g.x) + 1e-7);
+}
+void main(){
+  vec4 s = texelFetch(u_state, ivec2(gl_FragCoord.xy), 0);
+  bool crossing = h1(s.w * 5.9) < u_cross;
+  float ang = crossing ? u_ang + u_crossAng : u_ang;
+  vec2 off = u_seedOff + (crossing ? vec2(17.3, -4.1) : vec2(0.));
+  vec2 t = tang(s.xy, ang, off);
+  float gm = gmag;
+  float h = .02;
+  vec2 t2 = tang(s.xy + t * h, ang, off);
+  if (dot(t, t2) < 0.) t2 = -t2;
+  float k = clamp((t.x * t2.y - t.y * t2.x) / h, -40., 40.); // signed curvature
+  o = vec4(t, k, gm);
+}`;
+
   // 2a. Fade the trails a little each frame.
   const FADE = `#version 300 es
 precision highp float;
@@ -216,9 +251,19 @@ uniform float u_mat, u_strands, u_cross, u_time;
 ${GUIDE_FN}
 uniform vec2 u_center;
 out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp; out vec2 v_pos; out float v_sig;
+#ifdef SEG
+#define NSEG 8
+uniform sampler2D u_tan; uniform vec2 u_res; uniform float u_lineW, u_len, u_dust; uniform int u_stride;
+out float v_d; out float v_w;
+#endif
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
 void main(){
-  ivec2 ij = ivec2(gl_VertexID % u_w, gl_VertexID / u_w);
+#ifdef SEG
+  int id = gl_InstanceID * u_stride; // long strokes: only every few particles need one
+#else
+  int id = gl_VertexID;
+#endif
+  ivec2 ij = ivec2(id % u_w, id / u_w);
   vec4 s = texelFetch(u_state, ij, 0);
   float life = 5. + 9. * h1(s.w * 3.1);
   float env = smoothstep(0., 2.5, s.z) * (1. - smoothstep(life - 2.5, life, s.z));
@@ -250,7 +295,8 @@ void main(){
   vec2 pos = s.xy;
   // the background sits a little further back: drawn slightly closer to the
   // centre (parallax) and fainter; the foreground slightly forward
-  pos = u_center + (pos - u_center) * (layer == 0. ? .9 : layer == 2. ? 1.04 : 1.);
+  float par = layer == 0. ? .9 : layer == 2. ? 1.04 : 1.;
+  pos = u_center + (pos - u_center) * par;
   float size = layer == 0. ? .75 : layer == 2. ? 1.35 : 1.;
   v_sharp = layer == 0. ? 0. : layer == 2. ? 1. : .55;
   v_a *= layer == 0. ? .45 : layer == 2. ? 1.15 : 1.;
@@ -284,13 +330,47 @@ void main(){
     size *= mix(.62 * (.55 + .45 * env), 1.45, sig);
   }
 
+#ifdef SEG
+  // SILK: each particle draws a short, tapered arc of light along the wave
+  // line it sits on, bent with the line's curvature. Overlapping arcs from
+  // neighbouring particles join into smooth, continuous filaments that
+  // follow the ribbon's current shape (instead of the paths particles took
+  // while the ribbon moved, which is what crosshatched).
+  vec4 tk = texelFetch(u_tan, ij, 0);
+  vec2 t = tk.xy, nr = vec2(-t.y, t.x);
+  float len = u_len * par * mix(.7 + .6 * h1(s.w * 9.4), 1.7, v_sig);
+  // dust drifting off the lines stays a short, faint mote
+  float dusty = step(1. - u_dust, h1(s.w * 7.7));
+  len *= 1. - .8 * dusty; v_a *= 1. - .65 * dusty;
+  // where the lines bunch into a knot their direction is unreliable: fade
+  v_a *= smoothstep(.15, .6, tk.w) / (1. + .15 * tk.z * tk.z * len * len);
+  float k = clamp(tk.z, -2.5 / len, 2.5 / len);
+  int seg = gl_VertexID / 2;
+  float u = float(seg) / float(NSEG);
+  float x = (u - .5) * len, th = k * x;
+  vec2 P = pos + t * x + nr * (.5 * k * x * x);
+  vec2 dir = normalize(t + nr * th);
+  float taper = sin(3.14159 * u);
+  vec2 q = P * u_res.y;                      // world -> pixels (isotropic)
+  float w = u_lineW * size * (.7 + .6 * h1(s.w * 5.3)) * (.35 + .65 * taper);
+  float side = (gl_VertexID & 1) == 0 ? -1. : 1.;
+  float e = w + 1.;
+  q += vec2(-dir.y, dir.x) * side * e;
+  v_d = side * e; v_w = w;
+  v_a *= taper * taper;
+  gl_Position = vec4(q / (.5 * u_res), 0., 1.);
+#else
   gl_Position = vec4(pos.x / (u_asp * .5), pos.y / .5, 0., 1.);
   gl_PointSize = u_size * size * (.7 + .6 * h1(s.w * 5.3));
+#endif
 }`;
   const PTS_FS = `#version 300 es
 precision highp float;
 uniform vec3 u_colA, u_colB, u_colAcc; uniform float u_bright, u_accent, u_lumin, u_shimmer, u_time, u_irid;
 in float v_a; in float v_s; in float v_acc; in float v_layer; in float v_sharp; in vec2 v_pos; in float v_sig;
+#ifdef SEG
+in float v_d; in float v_w;
+#endif
 // rotate a colour's hue (YIQ), keeping its brightness
 vec3 hueRot(vec3 c, float a){
   vec3 y = mat3(.299, .596, .211, .587, -.274, -.523, .114, -.322, .312) * c;
@@ -301,10 +381,15 @@ vec3 hueRot(vec3 c, float a){
 out vec4 o;
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
 void main(){
+#ifdef SEG
+  // coverage across the line (box-filtered, so hairlines stay smooth)
+  float disc = clamp(v_w + .5 - abs(v_d), 0., 1.);
+#else
   vec2 c = gl_PointCoord - .5;
   float rr = length(c);
   // sharper points in front, softer behind
   float disc = mix(exp(-rr * rr * 14.), smoothstep(.5, .15, rr), v_sharp);
+#endif
   vec3 col = mix(u_colA, u_colB, h1(v_s * 9.1));
   // IRIDESCENCE: an understated hue drift across the field and between
   // fibres, within the palette (u_irid = max shift in radians; 0 = off)
@@ -370,7 +455,7 @@ void main(){
   if (u_veilAmt > 0.) {
     vec3 V = texture(u_veil, uv).rgb * 2.;
     for (int i = 0; i < 12; i++) {
-      float a = float(i) * .5236 + .26, rad = (i % 2 == 0) ? 1.6 : 3.4;
+      float a = float(i) * .5236 + .26, rad = (i % 2 == 0) ? 2.2 : 4.6;
       V += texture(u_veil, uv + vec2(cos(a), sin(a)) * rad * u_vpx).rgb;
     }
     V /= 14.;
@@ -471,6 +556,16 @@ void main(){
     return [f(0), f(8), f(4)];
   }
 
+  // SILK material tuning (rendering only)
+  const SILK = {
+    lineW: 0.32,  // half-width of a filament line, in CSS pixels (x tier size)
+    bright: 1.6,   // light each line deposits
+    trail: 0.6,   // trails (shorter: the lines show the ribbon's current shape)
+    stride: 3,    // one stroke per this many particles (cost)
+    len: 0.11,    // length of each particle's arc of light (screen heights)
+    veil: 1.1,    // strength of the soft atmospheric veil
+  };
+
   class Waves {
     constructor(canvas, opts = {}) {
       this.c = canvas;
@@ -485,6 +580,9 @@ void main(){
       this.pSim = this._prog(QUAD_VS, SIM);
       this.pFade = this._prog(QUAD_VS, FADE);
       this.pPts = this._prog(PTS_VS, PTS_FS);
+      const seg = (src) => src.replace('precision highp float;', '#define SEG\nprecision highp float;');
+      this.pSeg = this._prog(seg(PTS_VS), seg(PTS_FS));
+      this.pTan = this._prog(QUAD_VS, TAN);
       this.pOut = this._prog(QUAD_VS, OUT);
       this.pGlow = this._prog(QUAD_VS, GLOW);
       this.pStar = this._prog(STAR_VS, STAR_FS);
@@ -583,6 +681,7 @@ void main(){
         data[i * 4 + 3] = Math.random() * 1000; // seed
       }
       this.state = [this._tex(this.PW, this.PH, 'state', data), this._tex(this.PW, this.PH, 'state', null)];
+      this.tan = this.tan || this._tex(this.PW, this.PH, 'light');
       const gl = this.gl;
       for (const L of this.light || []) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, L.fb);
@@ -933,6 +1032,12 @@ void main(){
       gl.uniform1f(P.u.u_flow, (0.03 + 0.11 * mid) * tempo * M.speed * (1 + 0.5 * M.instab * acc) * (1 - 0.65 * quiet));
       gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust); // HIGH + SILENCE: strands fray into dust
       gl.uniform1f(P.u.u_turb, (M.turb * (0.5 + 0.5 * mid) + 0.45 * tension) * (this.guides ? GUIDE.turb : 1)); // MOOD + TENSION: turbulence
+      const FU = { // the field's shape, shared with the silk tangent pass
+        u_time: this.evolveT ?? this.t, u_freq: (1.0 + 0.3 * mid) * M.curve,
+        u_warp: (0.5 + 0.5 * mid + 0.25 * tension) * M.fold, u_deep: 0.06 + 0.32 * bass, u_deepPh: this.deepPh || 0,
+        u_bassAmp: (0.04 + 0.2 * bass) * M.swell, u_bassPhase: this.bassPhase, u_ang: this.ang,
+        u_cross: this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension), u_crossAng: 1.05 + 0.4 * Math.sin(this.t * 0.02),
+      };
       gl.uniform1f(P.u.u_deep, 0.06 + 0.32 * bass);              // LOW: deep currents displace the field
       gl.uniform1f(P.u.u_deepPh, this.deepPh || 0);
       gl.uniform1f(P.u.u_loosen, quiet);                         // SILENCE: lines loosen their hold
@@ -954,6 +1059,19 @@ void main(){
       this._setGuide(P);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       this.state = [sOut, sIn];
+      if (this.silk) {
+        // 1s. silk: the wave line's direction and bend at every particle
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.tan.fb);
+        P = this.pTan;
+        gl.useProgram(P.p);
+        gl.bindTexture(gl.TEXTURE_2D, sOut.tex);
+        gl.uniform1i(P.u.u_state, 0);
+        for (const k in FU) gl.uniform1f(P.u[k], FU[k]);
+        gl.uniform2f(P.u.u_center, this.focus.x, this.focus.y);
+        gl.uniform2f(P.u.u_seedOff, (this.seedOff || [0, 0])[0], (this.seedOff || [0, 0])[1]);
+        this._setGuide(P);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
 
       // 2. trails: fade the light a little, then draw particles on top
       const [lIn, lOut] = this.light;
@@ -965,16 +1083,26 @@ void main(){
       gl.uniform1i(P.u.u_prev, 0);
       gl.uniform2f(P.u.u_res, lOut.w, lOut.h);
       // VOLUME: louder music leaves longer, silkier trails
-      gl.uniform1f(P.u.u_keep, Math.exp(-dt / ((0.18 + 0.45 * vol) * M.trail)));  // MOOD: soft or sharp
+      gl.uniform1f(P.u.u_keep, Math.exp(-dt / ((0.18 + 0.45 * vol) * M.trail * (this.silk ? SILK.trail : 1))));  // MOOD: soft or sharp
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.bindVertexArray(this.vao);
-      P = this.pPts;
+      P = this.silk ? this.pSeg : this.pPts;
       gl.useProgram(P.p);
       gl.bindTexture(gl.TEXTURE_2D, this.state[0].tex);
       gl.uniform1i(P.u.u_state, 0);
+      if (this.silk) {
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.tan.tex);
+        gl.uniform1i(P.u.u_tan, 1);
+        gl.uniform1f(P.u.u_len, SILK.len);
+        gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.uniform2f(P.u.u_res, lOut.w, lOut.h);
+        gl.uniform1f(P.u.u_lineW, SILK.lineW * this.dpr);
+      }
       gl.uniform1i(P.u.u_w, this.PW);
       gl.uniform1f(P.u.u_spread, this.spreadNow);
       gl.uniform2f(P.u.u_center, this.focus.x, this.focus.y);
@@ -998,7 +1126,12 @@ void main(){
       const per = (98304 / (this.PW * this.PH)) * (this.idle ? 0.006 : 0.0085 + 0.013 * vol);
       // MOOD: luminosity (sparser moods draw fewer particles, each a touch brighter)
       gl.uniform1f(P.u.u_bright, per * dt * 60 * M.light / Math.sqrt(Math.max(0.3, M.visible)));
-      gl.drawArrays(gl.POINTS, 0, this.PW * this.PH);
+      if (this.silk) {
+        // lines deposit light once per pass, not once per frame
+        gl.uniform1f(P.u.u_bright, SILK.bright * per * M.light / Math.sqrt(Math.max(0.3, M.visible)));
+        gl.uniform1i(P.u.u_stride, SILK.stride);
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 18, Math.floor(this.PW * this.PH / SILK.stride));
+      } else gl.drawArrays(gl.POINTS, 0, this.PW * this.PH);
       gl.disable(gl.BLEND);
       gl.bindVertexArray(null);
       this.light = [lOut, lIn];
@@ -1044,7 +1177,7 @@ void main(){
       gl.bindTexture(gl.TEXTURE_2D, this.veil.tex);
       gl.uniform1i(P.u.u_veil, 2);
       gl.uniform2f(P.u.u_vpx, 1 / this.veil.w, 1 / this.veil.h);
-      gl.uniform1f(P.u.u_veilAmt, this.silk ? 0.8 + 0.5 * (this.lumin ?? 0.2) : 0);
+      gl.uniform1f(P.u.u_veilAmt, this.silk ? SILK.veil * (0.7 + 0.6 * (this.lumin ?? 0.2)) : 0);
       gl.activeTexture(gl.TEXTURE0);
       gl.uniform2f(P.u.u_res, this.c.width, this.c.height);
       gl.uniform2f(P.u.u_gpx, 1 / this.glow.w, 1 / this.glow.h);

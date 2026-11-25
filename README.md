@@ -60,6 +60,13 @@ phone with **audio file**.
   intimate to expansive and now and then curls over itself, with a faint
   iridescent hue drift. Tuning lives in the `GUIDE` table in `js/waves.js`;
   each variety setting can be set to 0 to turn it off.
+- **Silk light** (try it with `?material=silk`, or press **M** while it plays
+  to switch on the very same particles): instead of points, each particle
+  draws a fine, tapered arc of light along the wave line it sits on, so the
+  filaments become smooth, continuous threads that follow the ribbon's
+  current shape, with a few luminous signature strands and a soft veil of
+  coloured light around them. Rendering only: the movement is identical.
+  Tuning lives in the `SILK` table in `js/waves.js`.
 - **Unguided particle waves**, at
   [paigelatimer.ca/minor-bloom/?style=waves](https://paigelatimer.ca/minor-bloom/?style=waves): tens of thousands of particles of light
   stream along flowing wave lines, layering into silky sheets in a night sky.
