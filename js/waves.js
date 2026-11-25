@@ -282,6 +282,9 @@ void main(){
     vec2 rg = mat2(ca, sa, -sa, ca) * (s.xy - u_center);
     float gd = gDist(rg) / (u_gBand * .8);
     v_a *= (.3 + .7 * exp(-gd * gd)) * (1. + .7 * (1. - gPinch(rg.x)));
+    // small groups that stray well clear of the ribbon fade away rather than
+    // leaving short comb-like trails out in the dark
+    v_a *= 1. - smoothstep(1.3, 1.9, abs(gd));
     expr = exp(-gd * gd * 1.6) * (.6 + 1.4 * (1. - gPinch(rg.x)));
   }
   // TENDER: only some particles are drawn, so the filaments are sparse
