@@ -678,7 +678,7 @@ void main(){
   const RIBBON_OFF = { ribbon: 0, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8,
                        channels: 0, channelScale: 2.2, layers: 0, clarity: 0, compress: 0 };
   for (const k in RENDER_PRESETS) RENDER_PRESETS[k] = { ...RIBBON_OFF, ...RENDER_PRESETS[k] };
-  const DEFAULT_PRESET = 'sheer';
+  const DEFAULT_PRESET = 'tuned';
   const LAYERS = ['all', 'trails', 'arcs', 'veil', 'glow'];
 
   class Waves {

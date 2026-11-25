@@ -72,7 +72,8 @@ phone with **audio file**.
   length, trail opacity, brightness make-up for short trails, the silk arcs
   (brightness, stride, length), the veil and the glow; **L** (or
   `?layer=trails|arcs|veil|glow`) shows each rendering layer on its own.
-  The default is the `curtain` preset: the `tuned` look (long, faint trails;
+  The default is the `tuned` preset. An experimental `curtain` preset
+  (`?render=curtain`) adds to the `tuned` look (long, faint trails;
   short, bright silk strokes from a sparse set of particles; a strong veil
   and glow) plus an experimental **asymmetric ribbon profile**. Across the
   ribbon, the light gathers into a luminous edge on one side and falls away
@@ -84,7 +85,7 @@ phone with **audio file**.
   gives, never where it goes. Sliders: `ribbon` (amount), `asym`,
   `widthVar`, `edgeSoft`, `falloff`, `densityVar`, `dissolve`, `twist` and
   `gain`. `?render=tuned` shows the look without it.
-  On top of that, the default `sheer` preset makes the interior read like
+  On top of that, the experimental `sheer` preset (`?render=sheer`) makes the interior read like
   layers of illuminated sheer fabric: the inside of each formation turns
   more transparent while the luminous edge stays defined (`clarity`),
   darker translucent channels run through the lit material (`channels`,
