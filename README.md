@@ -72,7 +72,10 @@ phone with **audio file**.
   length, trail opacity, brightness make-up for short trails, the silk arcs
   (brightness, stride, length), the veil and the glow; **L** (or
   `?layer=trails|arcs|veil|glow`) shows each rendering layer on its own.
-  The default is the `tuned` preset. An experimental `curtain` preset
+  The default is the `vivid` preset: the `tuned` look with richer colour
+  (`saturation`, 1 = as before; the brightest light is also compressed,
+  `compress`, so it keeps its colour instead of washing out to white).
+  `?render=tuned` shows it without. An experimental `curtain` preset
   (`?render=curtain`) adds to the `tuned` look (long, faint trails;
   short, bright silk strokes from a sparse set of particles; a strong veil
   and glow) plus an experimental **asymmetric ribbon profile**. Across the
