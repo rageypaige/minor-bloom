@@ -322,7 +322,7 @@ void main(){
     float support = .5 * (.12 + 1.1 * laneW) * (.35 + .9 * pv) * dirW * crossW;
     // signature filaments: luminous and sharp, strongest where the
     // gesture is most expressive; a few stay present even elsewhere
-    float signature = 2.4 * (.2 + .8 * clamp(expr, 0., 1.6));
+    float signature = 1.6 * (.2 + .8 * clamp(expr, 0., 1.6));
     v_a *= mix(support, signature, sig);
     v_sig = sig;
     v_sharp = mix(v_sharp * .3, .85, sig);
@@ -559,10 +559,10 @@ void main(){
   // SILK material tuning (rendering only)
   const SILK = {
     lineW: 0.32,  // half-width of a filament line, in CSS pixels (x tier size)
-    bright: 0.45,  // light each arc adds on top of the original points
+    bright: 0.2,   // light each arc adds on top of the original points
     stride: 4,    // one stroke per this many particles (cost)
     len: 0.11,    // length of each particle's arc of light (screen heights)
-    veil: 0.45,   // strength of the soft atmospheric veil
+    veil: 0.2,    // strength of the soft atmospheric veil
   };
 
   class Waves {
