@@ -217,8 +217,11 @@ ${GUIDE_FN}
 ${FIELD_FN}
 float gmag;
 vec2 tang(vec2 p, float ang, vec2 off){
-  float e = .003, n = field(p, ang, off);
-  vec2 g = vec2(field(p + vec2(e, 0.), ang, off) - n, field(p + vec2(0., e), ang, off) - n) / e;
+  // (a wide, centred difference: the direction of the wave over a stroke's
+  // length, not every small ripple in it, so strokes run smooth and parallel)
+  float e = .014;
+  vec2 g = vec2(field(p + vec2(e, 0.), ang, off) - field(p - vec2(e, 0.), ang, off),
+                field(p + vec2(0., e), ang, off) - field(p - vec2(0., e), ang, off)) / (2. * e);
   gmag = length(g);
   return normalize(vec2(-g.y, g.x) + 1e-7);
 }
@@ -229,7 +232,7 @@ void main(){
   vec2 off = u_seedOff + (crossing ? vec2(17.3, -4.1) : vec2(0.));
   vec2 t = tang(s.xy, ang, off);
   float gm = gmag;
-  float h = .02;
+  float h = .04;
   vec2 t2 = tang(s.xy + t * h, ang, off);
   if (dot(t, t2) < 0.) t2 = -t2;
   float k = clamp((t.x * t2.y - t.y * t2.x) / h, -40., 40.); // signed curvature
@@ -514,7 +517,7 @@ void main(){
     foldAmp: 0.04, foldAmpMid: 0.09, foldK: 2.1, foldSpeed: 0.08, foldSpeedMid: 0.22,
     rollAmp: 0.025, rollAmpBass: 0.1, rollK: 0.6, rollSpeed: 0.3,
     pinch: 0.5, pinchTension: 0.25, pinchK: 1.3, pinchSpeed: 0.08, pinchSpeedEnergy: 0.15,
-    turb: 0.5,          // share of the original eddy turbulence kept
+    turb: 0.3,          // share of the original eddy turbulence kept
     band: 0.12, bandLush: 0.08, bandVol: 0.06, // free-movement band around the guide
     warp: 0.3, swell: 0.4, // share of the original noise warp / bass swell kept inside the band
     pull: 1.5,          // strength of the soft restoring force outside the band
@@ -531,7 +534,7 @@ void main(){
     scaleSpeed: 0.008,
     curl: 1.3,          // occasional swelling of the folds into curls/overlaps
     curlSpeed: 0.014,
-    fine: 0.55,         // share of the fine warp octave kept (1 = as before; less = less crosshatching)
+    fine: 0.25,         // share of the fine warp octave kept (1 = as before; less = less crosshatching)
     irid: 0.32,         // rad: max secondary-hue shift (iridescence; 0 = off)
   };
 
