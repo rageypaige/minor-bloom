@@ -72,8 +72,18 @@ phone with **audio file**.
   length, trail opacity, brightness make-up for short trails, the silk arcs
   (brightness, stride, length), the veil and the glow; **L** (or
   `?layer=trails|arcs|veil|glow`) shows each rendering layer on its own.
-  The default is the `tuned` preset (long, faint trails; short, bright silk
-  strokes from a sparse set of particles; a strong veil and glow).
+  The default is the `curtain` preset: the `tuned` look (long, faint trails;
+  short, bright silk strokes from a sparse set of particles; a strong veil
+  and glow) plus an experimental **asymmetric ribbon profile**. Across the
+  ribbon, the light gathers into a luminous edge on one side and falls away
+  nonlinearly into darkness on the other; the width swells into broad
+  sheets and narrows into fine ribbons along its length; the bright edge
+  migrates across as the ribbon seems to twist; soft bands of density run
+  through it; and some stretches dissolve. All of it is smooth, slow
+  variation along the ribbon, and only changes how much light each particle
+  gives, never where it goes. Sliders: `ribbon` (amount), `asym`,
+  `widthVar`, `edgeSoft`, `falloff`, `densityVar`, `dissolve`, `twist` and
+  `gain`. `?render=tuned` shows the look without it.
   `?render=baseline` and `?render=shortTrails` show the earlier looks. These
   change only how the light is drawn, never how the particles move.
 - **Unguided particle waves**, at

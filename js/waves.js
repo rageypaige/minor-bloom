@@ -251,6 +251,11 @@ void main(){ o = vec4(texture(u_prev, gl_FragCoord.xy / u_res).rgb * u_keep, 1.)
 precision highp float;
 uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_spread, u_visible, u_ang;
 uniform float u_mat, u_strands, u_cross, u_time;
+// RIBBON PROFILE (rendering only): (amount, asymmetry, width variation,
+// edge softness), (density falloff, density variation, dissolve, twist)
+uniform vec4 u_rib1, u_rib2; uniform float u_ribGain;
+// smooth, low-frequency variation in 0..1 (coherent along the ribbon)
+float lf(float x, float t, float s){ return clamp(.5 + .3 * sin(x * 1.3 + t * .045 + s) + .2 * sin(x * 2.9 - t * .06 + s * 2.7), 0., 1.); }
 ${GUIDE_FN}
 uniform vec2 u_center;
 out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp; out vec2 v_pos; out float v_sig;
@@ -288,6 +293,44 @@ void main(){
     // small groups that stray well clear of the ribbon fade away rather than
     // leaving short comb-like trails out in the dark
     v_a *= 1. - smoothstep(1.3, 1.9, abs(gd));
+
+    // ASYMMETRIC RIBBON PROFILE. Instead of a round, evenly lit tube, the
+    // light across the ribbon follows a profile that varies smoothly along
+    // its length: a concentrated luminous edge on one side falling away
+    // nonlinearly into darkness on the other, a width that swells into
+    // broad sheets and narrows into fine ribbons, the bright edge migrating
+    // across as if the ribbon were twisting in space, soft bands of density
+    // and stretches that dissolve. Particles are not moved: only how much
+    // light each one gives depends on where it sits across the ribbon.
+    if (u_rib1.x > 0.) {
+      float X = rg.x, T = u_time;
+      float asym = u_rib1.y, wv = u_rib1.z, soft = max(.03, u_rib1.w);
+      float fall = u_rib2.x, dv = u_rib2.y, diss = u_rib2.z, tw = u_rib2.w;
+      // twist: the ribbon's angle to the viewer drifts along its length and in time
+      float th = X * 1.4 * tw + T * .11 * tw + 1.8 * sin(X * .6 + T * .03);
+      float face = cos(th);
+      // width along the length (a fraction of the band), times how much of
+      // the ribbon faces the viewer: edge-on it narrows to a fine line
+      float width = mix(1., mix(.35, 1.2, lf(X, T, 1.)), wv) * mix(1., .22 + .78 * abs(face), tw > 0. ? 1. : 0.);
+      float u = gd / max(width, .05);                 // -1..1 across the visible ribbon
+      // the luminous edge: on one side, migrating across as it twists
+      float side = clamp(face * 5., -1., 1.);         // which way the ribbon faces
+      float e = mix(.9, .9 * sin(th + 1.57), tw > 0. ? .35 : 0.) * side;
+      float d = (e - u) * sign(e + 1e-4);             // 0 at the edge, growing inward
+      float beyond = exp(-pow(max(-d, 0.) / soft, 2.));                 // crisp outside the edge
+      float inner = exp(-pow(max(d, 0.) / 1.5, fall) * 1.4);           // nonlinear falloff to darkness
+      float edgeGlow = exp(-pow(d / (soft * .6), 2.));                   // concentrated bright edge
+      float asymShape = (d < 0. ? beyond : inner) + .9 * edgeGlow;
+      float symShape = exp(-u * u * 1.2);
+      float shape = mix(symShape, asymShape, asym) * (1. - smoothstep(1.05, 1.6, abs(u)));
+      // edge-on stretches are denser, so they shine a little more
+      shape *= inversesqrt(max(width, .2)) * .8;
+      // smooth bands of density across the width
+      shape *= mix(1., .3 + 1.1 * lf(X * 1.2 + u * 1.9, T * .8, 9.), dv);
+      // some stretches dissolve into darkness, others stay clearly defined
+      if (diss > 0.) shape *= smoothstep(diss - .18, diss + .18, lf(X * .85, T * .6, 13.));
+      v_a *= mix(1., shape * u_ribGain, u_rib1.x);  // (gain restores the light the profile takes away)
+    }
     expr = exp(-gd * gd * 1.6) * (.6 + 1.4 * (1. - gPinch(rg.x)));
   }
   // TENDER: only some particles are drawn, so the filaments are sparse
@@ -591,8 +634,14 @@ void main(){
     // Paige's tuning (the default): long, faint trails; short, bright silk
     // strokes from a sparse set of particles; a strong veil and glow
     tuned:      { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25 },
+    // tuned + the experimental asymmetric ribbon profile (the default)
+    curtain:    { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25,
+                  ribbon: 1, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8 },
   };
-  const DEFAULT_PRESET = 'tuned';
+  // ribbon profile settings default to off, so older presets look as they did
+  const RIBBON_OFF = { ribbon: 0, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8 };
+  for (const k in RENDER_PRESETS) RENDER_PRESETS[k] = { ...RIBBON_OFF, ...RENDER_PRESETS[k] };
+  const DEFAULT_PRESET = 'curtain';
   const LAYERS = ['all', 'trails', 'arcs', 'veil', 'glow'];
 
   class Waves {
@@ -1166,6 +1215,9 @@ void main(){
       gl.uniform1f(P.u.u_irid, this.guides ? GUIDE.irid : 0);
       this._setGuide(P);
       gl.uniform1f(P.u.u_mat, isSeg ? 1 : 0);
+      gl.uniform4f(P.u.u_rib1, this.guides ? R.ribbon : 0, R.asym, R.widthVar, R.edgeSoft);
+      gl.uniform4f(P.u.u_rib2, R.falloff, R.densityVar, R.dissolve, R.twist);
+      gl.uniform1f(P.u.u_ribGain, R.gain);
       gl.uniform1f(P.u.u_strands, Math.max(2, M.strands));
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension));
       gl.uniform1f(P.u.u_size, 2.4 * this.dpr);                 // thicker lines
@@ -1309,6 +1361,8 @@ void main(){
       const specs = [
         ['trailBase', 0, 1, 0.01], ['trailVol', 0, 1.2, 0.01], ['trailOpacity', 0, 1.5, 0.05], ['comp', 0, 1, 0.05],
         ['silkBright', 0, 3, 0.02], ['stride', 1, 12, 1], ['len', 0.02, 0.25, 0.01], ['veil', 0, 2, 0.05], ['glow', 0, 3, 0.05],
+        ['ribbon', 0, 1, 0.05], ['asym', 0, 1, 0.05], ['widthVar', 0, 1, 0.05], ['edgeSoft', 0.03, 1, 0.01],
+        ['falloff', 0.5, 4, 0.1], ['densityVar', 0, 1, 0.05], ['dissolve', 0, 0.8, 0.02], ['twist', 0, 2.5, 0.05], ['gain', 0.5, 4, 0.05],
       ];
       const box = document.createElement('div');
       box.style.cssText = 'position:fixed;top:12px;left:12px;z-index:9;padding:10px 12px;background:rgba(10,10,16,.8);color:#ddd;font:12px Inter,system-ui,sans-serif;border-radius:6px;line-height:1.9';
@@ -1330,7 +1384,7 @@ void main(){
       sel.addEventListener('change', () => { this.layer = +sel.value; });
       const pre = document.createElement('select');
       Object.keys(RENDER_PRESETS).forEach((n) => pre.add(new Option('preset: ' + n, n)));
-      pre.value = Object.keys(RENDER_PRESETS).find((n) => RENDER_PRESETS[n].trailBase === R.trailBase && RENDER_PRESETS[n].veil === R.veil) || DEFAULT_PRESET;
+      pre.value = Object.keys(RENDER_PRESETS).find((n) => ['trailBase', 'veil', 'ribbon'].every((k) => RENDER_PRESETS[n][k] === R[k])) || DEFAULT_PRESET;
       pre.addEventListener('change', () => { Object.assign(R, RENDER_PRESETS[pre.value]); this._devSync(); });
       box.append(sel, document.createElement('br'), pre);
       this._devSync = () => {
