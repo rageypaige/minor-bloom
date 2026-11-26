@@ -72,7 +72,18 @@ phone with **audio file**.
   length, trail opacity, brightness make-up for short trails, the silk arcs
   (brightness, stride, length), the veil and the glow; **L** (or
   `?layer=trails|arcs|veil|glow`) shows each rendering layer on its own.
-  The default is the `vivid` preset: the `tuned` look with richer colour
+  The default is the `gallery` preset, a refinement of `vivid` toward
+  experimental photography (rendering only): the short crisp streaks gather
+  at the concentrated bends and fade elsewhere so the detail blends into
+  the light (`arcFocus`); less haze; faint diffuse light held lower for rich
+  shadows and generous darkness, eased in quiet music (`toe`); a little
+  local contrast so bends read clearly (`localContrast`); a warm, slightly
+  irregular halation only around the strongest highlights (`halation`);
+  split-toned colour, brighter light leaning amber and rose and dimmer light
+  mauve and violet, with a slow drift so warm and cool coexist within one
+  formation (`splitTone`, `colourDrift`); restrained saturation; and much
+  finer grain (`grain`). `?render=vivid` shows the previous look.
+  The `vivid` preset is the `tuned` look with richer colour
   (`saturation`, 1 = as before; the brightest light is also compressed,
   `compress`, so it keeps its colour instead of washing out to white).
   `?render=tuned` shows it without. An experimental `curtain` preset

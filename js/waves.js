@@ -263,7 +263,7 @@ uniform vec2 u_center;
 out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp; out vec2 v_pos; out float v_sig;
 #ifdef SEG
 #define NSEG 8
-uniform sampler2D u_tan; uniform vec2 u_res; uniform float u_lineW, u_len, u_dust; uniform int u_stride;
+uniform sampler2D u_tan; uniform vec2 u_res; uniform float u_lineW, u_len, u_dust, u_arcFocus; uniform int u_stride;
 out float v_d; out float v_w;
 #endif
 float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }
@@ -431,6 +431,9 @@ void main(){
   q += vec2(-dir.y, dir.x) * side * e;
   v_d = side * e; v_w = w;
   v_a *= taper * taper;
+  // GALLERY: crisp accents gather at the concentrated bends and folds;
+  // elsewhere they fade, so the detail blends into the light around it
+  v_a *= mix(1., smoothstep(.35, 1.3, expr) * 1.8, u_arcFocus);
   gl_Position = vec4(q / (.5 * u_res), 0., 1.);
 #else
   gl_Position = vec4(pos.x / (u_asp * .5), pos.y / .5, 0., 1.);
@@ -508,6 +511,10 @@ uniform vec4 u_show;
 uniform float u_compress; // SHEER: highlight compression (0 = off)
 uniform float u_sat;      // colour saturation (1 = as before)
 uniform float u_yshift;   // steer yellow/olive hues toward amber/peach (0 = off)
+// GALLERY treatment (each 0 = off, grain 1 = as before)
+uniform float u_toe, u_lc, u_halation, u_split, u_drift, u_grain;
+const mat3 TOYIQ = mat3(.299, .596, .211, .587, -.274, -.523, .114, -.322, .312);
+const mat3 FROMYIQ = mat3(1., 1., 1., .956, -.272, -1.106, .621, -.647, 1.703);
 out vec4 o;
 float hash(vec2 p){ uvec2 q = uvec2(ivec2(floor(p))) * uvec2(1597334673U, 3812015801U); uint n = (q.x ^ q.y) * 1597334673U; return float(n) * (1. / 4294967295.); }
 void main(){
@@ -544,6 +551,36 @@ void main(){
     float vl = dot(V, vec3(.3, .59, .11));
     L += V * smoothstep(.004, .05, vl) * u_veilAmt * u_show.z; // LAYER 3, veil
   }
+  // GALLERY 2, selective light: faint, diffuse light is held lower, so the
+  // shadows stay rich and the darkness generous, while the focal areas
+  // keep their brightness
+  if (u_toe > 0.) {
+    float lm = dot(L, vec3(.3, .59, .11));
+    // (eased in quiet music, which is already restrained, so it never fades out)
+    L *= mix(1. - u_toe * (.35 + .65 * u_lumin), 1., smoothstep(.03, .5, lm));
+  }
+  // GALLERY 5, local contrast: light set against its own soft surround (the
+  // veil source), so concentrated bends read clearly and diffuse stretches
+  // fall back; scaled by brightness so faint edges dissolve gently
+  if (u_lc > 0. && u_veilAmt > 0.) {
+    vec3 S = texture(u_veil, uv).rgb;
+    float lm = dot(L, vec3(.3, .59, .11));
+    L = max(L + (L - S * 1.3) * u_lc * smoothstep(.06, .5, lm), 0.);
+  }
+  // GALLERY 3, halation: a warm, slightly irregular bleed around only the
+  // strongest highlights (the thresholded glow source), carrying a little
+  // of their own colour out beyond them
+  if (u_halation > 0.) {
+    vec3 H = vec3(0.);
+    for (int i = 0; i < 10; i++) {
+      float a = float(i) * .628 + 1.2 * sin(uv.x * 6.1 + uv.y * 4.3 + u_time * .05);
+      float rad = 4.5 + 2.5 * sin(uv.y * 8.7 - uv.x * 3.9 + float(i) * 1.7);
+      H += texture(u_glow, uv + vec2(cos(a), sin(a)) * rad * u_gpx).rgb;
+    }
+    H /= 10.;
+    float hl = dot(H, vec3(.3, .59, .11));
+    L += mix(H, hl * vec3(1.2, .7, .48), .5) * u_halation;
+  }
   // SHEER: compress the brightest light (above a knee) by luminance only, so
   // the brightest regions keep their colour and detail instead of burning
   // out to white
@@ -572,11 +609,25 @@ void main(){
     tm = max(mat3(1., 1., 1., .956, -.272, -1.106, .621, -.647, 1.703) * q, 0.);
   }
   tm = clamp(mix(vec3(Y), tm, satK), 0., 1.);
+  // GALLERY 4, nuanced colour: like split-toning a print, the brighter
+  // light leans toward amber and rose, the dimmer toward mauve and violet,
+  // with a slow spatial drift so warm and cool coexist within one
+  // formation. Only the hue direction moves (within the palette's own warm
+  // to cool arc), never the brightness, and only part of the way.
+  if (u_split > 0.) {
+    vec3 q = TOYIQ * tm;
+    float c = length(q.yz);
+    float drift = .5 * sin(uv.x * 2.3 + uv.y * 1.7 + u_time * .021) + .3 * sin(uv.y * 3.1 - uv.x * 1.4 - u_time * .016);
+    float warmth = clamp(smoothstep(.12, .7, q.x) + u_drift * drift, 0., 1.);
+    float ta = mix(1.3, .12, warmth);              // mauve .. amber-rose (YIQ hue angle)
+    q.yz = mix(q.yz, vec2(cos(ta), sin(ta)) * c, u_split * .45);
+    tm = clamp(FROMYIQ * q, 0., 1.);
+  }
   vec3 col = u_base + tm;
   float gf = floor(u_time * 12.);
   float g = hash(gl_FragCoord.xy + fract(gf * .618) * vec2(311., 173.) + vec2(mod(gf, 97.), 0.)) - .5;
   float lum = dot(col, vec3(.3, .59, .11));
-  col += g * (.022 + .09 * lum);
+  col += g * (.022 + .09 * lum) * u_grain;   // GALLERY: grain (1 = as before)
   o = vec4(col, 1.);
 }`;
 
@@ -688,6 +739,12 @@ void main(){
     // compressed so it keeps its colour instead of washing out (the default)
     vivid:      { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25,
                   saturation: 1.7, compress: 0.5, yellowShift: 0.6 },
+    // GALLERY (the default): vivid, refined toward experimental photography.
+    // Fewer, focused crisp accents; less haze; rich shadows; warm halation
+    // only around the strongest highlights; split-toned colour; finer grain.
+    gallery:    { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.3, comp: 0, silkBright: 0.45, stride: 10, len: 0.03, veil: 0.95, glow: 1.4,
+                  saturation: 1.3, compress: 0.75, yellowShift: 0.6,
+                  arcFocus: 1, toe: 0.32, localContrast: 0.12, halation: 0.6, splitTone: 0.6, colourDrift: 0.35, grain: 0.35 },
     // tuned + the experimental asymmetric ribbon profile (the default)
     curtain:    { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25,
                   ribbon: 1, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8 },
@@ -698,9 +755,10 @@ void main(){
   };
   // ribbon profile settings default to off, so older presets look as they did
   const RIBBON_OFF = { ribbon: 0, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8,
-                       channels: 0, channelScale: 2.2, layers: 0, clarity: 0, compress: 0, saturation: 1, yellowShift: 0 };
+                       channels: 0, channelScale: 2.2, layers: 0, clarity: 0, compress: 0, saturation: 1, yellowShift: 0,
+                       arcFocus: 0, toe: 0, localContrast: 0, halation: 0, splitTone: 0, colourDrift: 0, grain: 1 };
   for (const k in RENDER_PRESETS) RENDER_PRESETS[k] = { ...RIBBON_OFF, ...RENDER_PRESETS[k] };
-  const DEFAULT_PRESET = 'vivid';
+  const DEFAULT_PRESET = 'gallery';
   const LAYERS = ['all', 'trails', 'arcs', 'veil', 'glow'];
 
   class Waves {
@@ -1261,6 +1319,7 @@ void main(){
         gl.bindTexture(gl.TEXTURE_2D, this.tan.tex);
         gl.uniform1i(P.u.u_tan, 1);
         gl.uniform1f(P.u.u_len, R.len);
+        gl.uniform1f(P.u.u_arcFocus, R.arcFocus);
         gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust);
         gl.activeTexture(gl.TEXTURE0);
         gl.uniform2f(P.u.u_res, lOut.w, lOut.h);
@@ -1365,6 +1424,12 @@ void main(){
       gl.uniform1f(P.u.u_compress, R.compress);
       gl.uniform1f(P.u.u_sat, R.saturation);
       gl.uniform1f(P.u.u_yshift, R.yellowShift);
+      gl.uniform1f(P.u.u_toe, R.toe);
+      gl.uniform1f(P.u.u_lc, R.localContrast);
+      gl.uniform1f(P.u.u_halation, R.halation);
+      gl.uniform1f(P.u.u_split, R.splitTone);
+      gl.uniform1f(P.u.u_drift, R.colourDrift);
+      gl.uniform1f(P.u.u_grain, R.grain);
       gl.uniform1f(P.u.u_arcOn, this.silk && R.silkBright > 0 ? 1 : 0);
       const ly = LAYERS[this.layer];
       gl.uniform4f(P.u.u_show, ly === 'all' || ly === 'trails' ? 1 : 0, ly === 'all' || ly === 'arcs' ? 1 : 0,
@@ -1427,6 +1492,8 @@ void main(){
         ['ribbon', 0, 1, 0.05], ['asym', 0, 1, 0.05], ['widthVar', 0, 1, 0.05], ['edgeSoft', 0.03, 1, 0.01],
         ['falloff', 0.5, 4, 0.1], ['densityVar', 0, 1, 0.05], ['dissolve', 0, 0.8, 0.02], ['twist', 0, 2.5, 0.05], ['gain', 0.5, 4, 0.05],
         ['channels', 0, 1, 0.05], ['channelScale', 0.5, 5, 0.1], ['layers', 0, 1.5, 0.05], ['clarity', 0, 1, 0.05], ['compress', 0, 1.5, 0.05], ['saturation', 0.5, 2.5, 0.05], ['yellowShift', 0, 1.2, 0.05],
+        ['arcFocus', 0, 1, 0.05], ['toe', 0, 0.9, 0.05], ['localContrast', 0, 1, 0.05], ['halation', 0, 1.5, 0.05],
+        ['splitTone', 0, 1, 0.05], ['colourDrift', 0, 1, 0.05], ['grain', 0, 1.5, 0.05],
       ];
       const box = document.createElement('div');
       box.style.cssText = 'position:fixed;top:12px;left:12px;z-index:9;padding:10px 12px;background:rgba(10,10,16,.8);color:#ddd;font:12px Inter,system-ui,sans-serif;border-radius:6px;line-height:1.9';
@@ -1448,7 +1515,7 @@ void main(){
       sel.addEventListener('change', () => { this.layer = +sel.value; });
       const pre = document.createElement('select');
       Object.keys(RENDER_PRESETS).forEach((n) => pre.add(new Option('preset: ' + n, n)));
-      pre.value = Object.keys(RENDER_PRESETS).find((n) => ['trailBase', 'veil', 'ribbon', 'layers', 'saturation'].every((k) => RENDER_PRESETS[n][k] === R[k])) || DEFAULT_PRESET;
+      pre.value = Object.keys(RENDER_PRESETS).find((n) => ['trailBase', 'veil', 'ribbon', 'layers', 'saturation', 'toe'].every((k) => RENDER_PRESETS[n][k] === R[k])) || DEFAULT_PRESET;
       pre.addEventListener('change', () => { Object.assign(R, RENDER_PRESETS[pre.value]); this._devSync(); });
       box.append(sel, document.createElement('br'), pre);
       this._devSync = () => {
