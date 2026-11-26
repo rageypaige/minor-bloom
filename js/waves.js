@@ -695,6 +695,22 @@ void main(){
   const WARM_A = [0.92, 0.5, 0.34], WARM_B = [0.95, 0.76, 0.5];    // copper rose, champagne
   const COOL_A = [0.5, 0.44, 0.96], COOL_B = [0.72, 0.62, 0.98];   // slate lavender, pearl lilac
 
+  // INK palette (Paige's): a ramp from cool to warm. Minor-leaning harmony
+  // sits toward the inky blues, major-leaning toward copper rose and
+  // tarnished gold, with plum and black cherry as the bridge. The swatches
+  // are muted, dark colours; as additive light they are lifted part of the
+  // way toward full brightness (the darker ones less), keeping their hue.
+  const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+  const lift = (c) => { const k = Math.pow(0.92 / Math.max(...c), 0.6); return c.map((v) => Math.min(1, v * k)); };
+  const INK = ['#284F5B', '#526B86', '#70516D', '#8E475B', '#B7796B', '#B59A66'].map((h) => lift(hex(h)));
+  //          petrol ink  storm blue  bruised plum black cherry copper rose tarnished gold
+  const INK_GROUND = hex('#111016'); // aubergine charcoal
+  const inkRamp = (p) => {
+    p = Math.max(0, Math.min(INK.length - 1, p));
+    const i = Math.min(INK.length - 2, Math.floor(p)), t = p - i;
+    return INK[i].map((v, k) => v + (INK[i + 1][k] - v) * t);
+  };
+
   function rgbToHsl([r, g, b]) {
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
     if (mx === mn) return [0, 0, l];
@@ -745,6 +761,12 @@ void main(){
     gallery:    { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.3, comp: 0, silkBright: 0.45, stride: 10, len: 0.03, veil: 0.95, glow: 1.4,
                   saturation: 1.3, compress: 0.75, yellowShift: 0.6,
                   arcFocus: 1, toe: 0.32, localContrast: 0.12, halation: 0.6, splitTone: 0.6, colourDrift: 0.35, grain: 0.35 },
+    // INK (the default): gallery with Paige's ink palette and aubergine
+    // charcoal ground; split-toning and saturation eased so the palette's
+    // own hues lead
+    ink:        { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.3, comp: 0, silkBright: 0.45, stride: 10, len: 0.03, veil: 0.95, glow: 1.4,
+                  saturation: 1.1, compress: 0.75, yellowShift: 0.25,
+                  arcFocus: 1, toe: 0.32, localContrast: 0.12, halation: 0.6, splitTone: 0, colourDrift: 0.35, grain: 0.35, palette: 'ink' },
     // tuned + the experimental asymmetric ribbon profile (the default)
     curtain:    { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25,
                   ribbon: 1, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8 },
@@ -756,9 +778,9 @@ void main(){
   // ribbon profile settings default to off, so older presets look as they did
   const RIBBON_OFF = { ribbon: 0, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8,
                        channels: 0, channelScale: 2.2, layers: 0, clarity: 0, compress: 0, saturation: 1, yellowShift: 0,
-                       arcFocus: 0, toe: 0, localContrast: 0, halation: 0, splitTone: 0, colourDrift: 0, grain: 1 };
+                       arcFocus: 0, toe: 0, localContrast: 0, halation: 0, splitTone: 0, colourDrift: 0, grain: 1, palette: 'original' };
   for (const k in RENDER_PRESETS) RENDER_PRESETS[k] = { ...RIBBON_OFF, ...RENDER_PRESETS[k] };
-  const DEFAULT_PRESET = 'gallery';
+  const DEFAULT_PRESET = 'ink';
   const LAYERS = ['all', 'trails', 'arcs', 'veil', 'glow'];
 
   class Waves {
@@ -966,6 +988,8 @@ void main(){
         const target = this.songD && !this.idle ? 0.7 * raw[k] + 0.3 * this.songD[k] : raw[k];
         this.dims[k] += (target - this.dims[k]) * ease(dt, tau[k]);
       }
+      // (testing only: MB.debug.atmos._harmOverride = 0..1 pins the harmony)
+      if (this._harmOverride != null) this.dims.harm = this._harmOverride;
       const D = this.dims;
       const { energy: E, rhythm: R, texture: X, variation: V } = D;
       const T = D.tension;
@@ -1176,9 +1200,24 @@ void main(){
         const y = 0.3 * g[0] + 0.59 * g[1] + 0.11 * g[2];
         return g.map((v) => v + (y - v) * mute);
       };
-      const ta = finish(WARM_A.map((v, i) => v * twS + COOL_A[i] * (1 - twS)));
+      let ta = finish(WARM_A.map((v, i) => v * twS + COOL_A[i] * (1 - twS)));
       let tb = finish(WARM_B.map((v, i) => v * twS + COOL_B[i] * (1 - twS)));
-      if (!this.idle && f.chordId) {
+      const ink = this.R && this.R.palette === 'ink';
+      if (ink) {
+        // position on the ink ramp: harmony sets it, the key nudges it a
+        // little; the second colour is the next one along (a neighbour)
+        const pos = twS * 4 + (f.hueShift || 0) / 90;  // 0 petrol+storm .. 2 plum+cherry .. 4 copper+gold
+        const inkMute = (c) => { const y = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]; return c.map((v) => v + (y - v) * mute * 0.5); };
+        ta = inkMute(inkRamp(pos));
+        tb = inkMute(inkRamp(pos + 1));
+        // the current chord moves the second colour along the same ramp
+        // (major chords toward the warm end, minor toward the cool), farther
+        // the farther the chord is from home: never off the palette
+        if (!this.idle && f.chordId) {
+          const dist = Math.min(k5, 12 - k5) / 6;
+          tb = tb.map((v, i) => 0.6 * v + 0.4 * inkMute(inkRamp(pos + 1 + (f.chordQual ? 1 : -1) * (0.4 + 1.4 * dist)))[i]);
+        }
+      } else if (!this.idle && f.chordId) {
         const dist = Math.min(k5, 12 - k5) / 6; // 0 home .. 1 farthest
         const [h, sat, l] = rgbToHsl(ta);
         const rel = hslToRgb(h + (f.chordQual ? 1 : -1) * (12 + 70 * dist), sat * 100, Math.min(0.85, l + 0.08) * 100);
@@ -1437,7 +1476,7 @@ void main(){
       // quiet passages sit lower; intense ones open up
       gl.uniform1f(P.u.u_exposure, 0.95 + 0.75 * lum2);
       const tint = this.colA.map((v) => v * 0.02);
-      gl.uniform3fv(P.u.u_base, [0.03 + tint[0], 0.03 + tint[1], 0.04 + tint[2]]);
+      gl.uniform3fv(P.u.u_base, this.R.palette === 'ink' ? INK_GROUND.map((v, i) => v * 0.8 + tint[i] * 0.5) : [0.03 + tint[0], 0.03 + tint[1], 0.04 + tint[2]]);
       const sa = new Float32Array(MAXS * 4);
       let ns = 0;
       const skyVis = 0.75 - 0.15 * lush;
@@ -1515,7 +1554,7 @@ void main(){
       sel.addEventListener('change', () => { this.layer = +sel.value; });
       const pre = document.createElement('select');
       Object.keys(RENDER_PRESETS).forEach((n) => pre.add(new Option('preset: ' + n, n)));
-      pre.value = Object.keys(RENDER_PRESETS).find((n) => ['trailBase', 'veil', 'ribbon', 'layers', 'saturation', 'toe'].every((k) => RENDER_PRESETS[n][k] === R[k])) || DEFAULT_PRESET;
+      pre.value = Object.keys(RENDER_PRESETS).find((n) => ['trailBase', 'veil', 'ribbon', 'layers', 'saturation', 'toe', 'palette'].every((k) => RENDER_PRESETS[n][k] === R[k])) || DEFAULT_PRESET;
       pre.addEventListener('change', () => { Object.assign(R, RENDER_PRESETS[pre.value]); this._devSync(); });
       box.append(sel, document.createElement('br'), pre);
       this._devSync = () => {

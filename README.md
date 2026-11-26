@@ -72,7 +72,16 @@ phone with **audio file**.
   length, trail opacity, brightness make-up for short trails, the silk arcs
   (brightness, stride, length), the veil and the glow; **L** (or
   `?layer=trails|arcs|veil|glow`) shows each rendering layer on its own.
-  The default is the `gallery` preset, a refinement of `vivid` toward
+  The default is the `ink` preset: `gallery` with Paige's ink palette, a
+  ramp from cool to warm: petrol ink #284F5B, storm blue #526B86, bruised
+  plum #70516D, black cherry #8E475B, copper rose #B7796B and tarnished
+  gold #B59A66, on aubergine charcoal #111016. Minor-leaning harmony sits
+  at petrol ink and storm blue, in-between harmony at bruised plum and black
+  cherry, major-leaning at copper rose and tarnished gold; the key nudges
+  the position a little, and chords move the second colour along the same
+  ramp (never off the palette). Split-toning is off and saturation eased so
+  the palette leads. `?render=gallery` shows the previous colours.
+  The `gallery` preset is a refinement of `vivid` toward
   experimental photography (rendering only): the short crisp streaks gather
   at the concentrated bends and fade elsewhere so the detail blends into
   the light (`arcFocus`); less haze; faint diffuse light held lower for rich
