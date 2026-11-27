@@ -1141,8 +1141,8 @@ void main(){
       g.span = g.len * 0.5 * 1.15;
       g.H = g.H || new Float32Array(9);
       g.Hv = g.Hv || new Float32Array(9);
-      g.Hph = (g.Hph ?? rnd(0, 50)) + dt * G.lineSpeed * (0.05 + 0.18 * mid + 0.12 * Vv);
-      const amp = LN * G.lineAmp * g.scale * (0.03 + 0.2 * depth);
+      g.Hph = (g.Hph ?? rnd(0, 50)) + dt * G.lineSpeed * (0.05 + 0.18 * mid + 0.12 * Vv + 0.04 * (this.quietAmt || 0));
+      const amp = LN * G.lineAmp * g.scale * (0.03 + 0.2 * depth + 0.03 * (this.quietAmt || 0)); // (in silence: a slow, gentle bob)
       const steps = 4, h = dt / steps;
       for (let st = 0; st < steps; st++) {
         for (let i = 0; i < 9; i++) {
@@ -1382,7 +1382,7 @@ void main(){
       // MID + TEMPO + MOOD: the filaments' expressive movement (not volume);
       // it softens and slows in quiet passages
       gl.uniform1f(P.u.u_flow, (0.03 + 0.11 * mid) * tempo * M.speed * (1 + 0.5 * M.instab * acc) * (1 - 0.65 * quiet) * this.tw.speed);
-      gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust * this.tw.dust); // HIGH + SILENCE: strands fray into dust
+      gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.08 * quiet) * M.dust * this.tw.dust); // HIGH (+ a little in silence): strands fray into dust
       gl.uniform1f(P.u.u_turb, (M.turb * (0.5 + 0.5 * mid) + 0.45 * tension) * (this.guides ? GUIDE.turb : 1)); // MOOD + TENSION: turbulence
       const FU = { // the field's shape, shared with the silk tangent pass
         u_time: this.evolveT ?? this.t, u_freq: (1.0 + 0.3 * mid) * M.curve,
@@ -1392,7 +1392,7 @@ void main(){
       };
       gl.uniform1f(P.u.u_deep, 0.06 + 0.32 * bass);              // LOW: deep currents displace the field
       gl.uniform1f(P.u.u_deepPh, this.deepPh || 0);
-      gl.uniform1f(P.u.u_loosen, quiet);                         // SILENCE: lines loosen their hold
+      gl.uniform1f(P.u.u_loosen, 0.35 * quiet);                  // SILENCE: lines loosen a little (a faint line stays)
       const rip = new Float32Array(16);
       (this.ripples || []).slice(0, 4).forEach((r, i) => rip.set([r.x, r.y, r.t, r.a], i * 4));
       gl.uniform4fv(P.u.u_rip, rip);                             // PERCUSSION: ripples
@@ -1472,7 +1472,7 @@ void main(){
         gl.uniform1i(P.u.u_tan, 1);
         gl.uniform1f(P.u.u_len, R.len);
         gl.uniform1f(P.u.u_arcFocus, R.arcFocus);
-        gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust * this.tw.dust);
+        gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.08 * quiet) * M.dust * this.tw.dust);
         gl.activeTexture(gl.TEXTURE0);
         gl.uniform2f(P.u.u_res, lOut.w, lOut.h);
         gl.uniform1f(P.u.u_lineW, SILK.lineW * this.dpr);
@@ -1502,7 +1502,7 @@ void main(){
       gl.uniform3fv(P.u.u_colA, this.colA);
       gl.uniform3fv(P.u.u_colB, this.colB);
       gl.uniform3fv(P.u.u_colAcc, this.colAcc || [1, 1, 1]);
-      gl.uniform1f(P.u.u_visible, M.visible * (1 - 0.8 * quiet)); // MOOD + SILENCE: strands dissolve
+      gl.uniform1f(P.u.u_visible, M.visible * (1 - 0.65 * quiet)); // MOOD + SILENCE: strands thin out to a faint line
       gl.uniform1f(P.u.u_shimmer, this.idle ? 0.1 : 0.6 * high * (0.4 + 0.6 * (this.lumin ?? 0.2))); // HIGH: surface shimmer
       gl.uniform1f(P.u.u_time, this.t);
       gl.uniform1f(P.u.u_lumin, this.lumin ?? 0.2);
