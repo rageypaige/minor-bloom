@@ -68,17 +68,6 @@ phone with **audio file**.
   ribbon's current shape, a few brighter signature strands and a soft veil
   of coloured light around them. Rendering only: the movement is identical.
   Tuning lives in the `RENDER_PRESETS` table in `js/waves.js`.
-- **Wave body and echoes (experiment)**: open with `?body`, or press **B**
-  at any time to switch it on and off without resetting the song. A
-  continuous, filled ribbon is drawn from the actual wave contours (the same
-  field the particles follow), with a cohesive interior, readable edges and
-  highlights where the wave lines crowd together at bends; the particles,
-  silk strokes and veil are turned down to surface detail. Musical accents
-  release thin **echoes**: a stretch of the ribbon's edge, offset outward
-  and travelling away from it, tapering at its ends and fading; gentle
-  accents give shorter, quieter echoes. At most four at once, with a
-  cooldown, and none in silence. Tuning lives in the `BODY` and `ECHO`
-  tables in `js/waves.js`; **L** now also has a `body` view.
 - **Rendering development controls**: `?dev` shows sliders for trail
   length, trail opacity, brightness make-up for short trails, the silk arcs
   (brightness, stride, length), the veil and the glow; **L** (or
