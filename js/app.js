@@ -111,6 +111,8 @@
 
   function finish() {
     if (state !== 'listening') return;
+    pending = null;
+    show($('#save-ask'), false);
     const an = listener.analyzer;
     summary = an.summary();
     const heard = an.heard;
@@ -186,23 +188,44 @@
     downloadStill(finalCanvas, $('#title').value.trim(), summary.caption, 'moment');
   }
 
-  // Save the sky as it is right now, without stopping the music.
-  let snapTimer = null;
+  // Save the sky as it is right now, without stopping the music. The
+  // moment is kept as soon as save is tapped; a small line then asks what's
+  // playing (optional, pre-filled if known), and saving downloads it.
+  let snapTimer = null, pending = null;
   function snap() {
     if (state !== 'listening' || !listener) return;
+    if (pending) { confirmSave(); return; }
     const secs = Math.round(listener.analyzer.elapsed);
     const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
     const parts = [time];
-    const songName = $('#song').value.trim();
-    if (songName) parts.unshift(songName);
     if (hud && hud.key) parts.push(`leaning ${hud.key}`);
     if (hud && hud.word) parts.push(hud.word);
-    downloadStill(atmos.capture(lastF || idleMood), '', parts.join(' · '), `moment-${time.replace(':', '-')}`);
+    pending = { art: atmos.capture(lastF || idleMood), parts, time };
+    show($('#save-ask'), true);
+    $('#song').focus();
+    $('#song').select();
+  }
+  function confirmSave() {
+    if (!pending) return;
+    const songName = $('#song').value.trim();
+    const parts = songName ? [songName, ...pending.parts] : pending.parts;
+    downloadStill(pending.art, '', parts.join(' · '), `moment-${pending.time.replace(':', '-')}`);
+    pending = null;
+    show($('#save-ask'), false);
+    $('#mood-song').textContent = songName;
+    show($('#mood-song'), !!songName);
     const b = $('#btn-snap');
     b.textContent = 'saved';
     clearTimeout(snapTimer);
     snapTimer = setTimeout(() => { b.textContent = 'save'; }, 1600);
   }
+  function cancelSave() {
+    pending = null;
+    show($('#save-ask'), false);
+  }
+  $('#save-ask').addEventListener('submit', (e) => { e.preventDefault(); confirmSave(); });
+  $('#save-cancel').addEventListener('click', cancelSave);
+  $('#song').addEventListener('keydown', (e) => { if (e.key === 'Escape') cancelSave(); });
 
   function again() {
     state = 'intro';
@@ -320,7 +343,7 @@
       hudTimer += dt;
       if (hudTimer > 0.5) { updateHud(f, hudTimer); hudTimer = 0; }
       quietTimer += dt;
-      if (quietTimer > 6) $('#hud').classList.add('quiet');
+      if (quietTimer > 6 && !pending) $('#hud').classList.add('quiet');
     }
 
     requestAnimationFrame(frame);

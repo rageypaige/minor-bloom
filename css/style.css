@@ -70,13 +70,17 @@ h1 { font-weight: 400; font-size: 44px; margin: 0 0 4px; letter-spacing: 0.01em;
 #mood { margin: 0; }
 #mood-song { color: var(--ink); margin-right: 10px; }
 #mood-song::after { content: '·'; color: var(--ink-faint); margin-left: 10px; }
-/* the optional song name on the start screen */
+/* saving a moment: the optional song name, then save */
+#save-ask {
+  position: fixed; right: 20px; bottom: 56px; display: flex; align-items: baseline; gap: 12px;
+  max-width: calc(100vw - 40px);
+}
 #song {
-  display: block; width: min(320px, 100%); margin: 0 auto 16px; padding: 4px 8px;
-  font: inherit; font-size: 17px; text-align: center; color: var(--ink);
+  width: min(300px, 60vw); padding: 4px 2px; font: inherit; font-size: 17px; color: var(--ink);
   background: transparent; border: none; border-bottom: 1px solid var(--ink-faint);
 }
 #song::placeholder { color: var(--ink-faint); }
+@media (max-width: 520px) { #save-ask { left: 20px; right: 20px; bottom: 96px; } #song { flex: 1; width: auto; } }
 #mood-detail { font-family: Inter, system-ui, sans-serif; font-size: 12px; color: var(--ink-soft); margin-left: 6px; }
 
 /* Finished painting */

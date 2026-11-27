@@ -21,9 +21,10 @@ Live at [paigelatimer.ca/minor-bloom](https://paigelatimer.ca/minor-bloom/).
 3. Keep the Minor Bloom window visible while you listen. Browsers pause pages
    hidden in background tabs, so put the windows side by side or start the
    song and switch back.
-4. Optionally, type what you're listening to on the start screen. It shows
-   in the corner while you listen and on the stills you save (for an audio
-   file, its name is used if you leave it empty).
+4. **save** keeps the moment you tap it, then asks what you're listening
+   to (optional, pre-filled if known: a suggested song, or an audio file's
+   name); press Enter or **save** to download it. The song then shows in the
+   corner and on later stills.
    Not sure what to play? The start screen suggests one of Paige's favourite
    songs (picked at random each visit; the list is `SUGGESTIONS` in
    `js/app.js`). Clicking it opens the song on YouTube in a new tab and fills

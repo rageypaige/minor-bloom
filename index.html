@@ -15,7 +15,6 @@
   <main id="intro">
     <h1>minor bloom</h1>
     <p class="tagline">music, rendered in light.</p>
-    <input id="song" type="text" placeholder="what are you listening to? (optional)" maxlength="80" aria-label="What are you listening to? (optional)">
     <nav class="links">
       <button id="btn-device" class="tab-only">listen to a tab</button>
       <span class="dot tab-only">·</span>
@@ -39,6 +38,13 @@
   <footer id="credit">made with <span aria-label="love">&lt;3</span> by <a href="https://paigelatimer.ca">paige</a></footer>
 
   <!-- While listening -->
+  <!-- Saving a moment: asks for the song (optional), then saves -->
+  <form id="save-ask" hidden autocomplete="off">
+    <input id="song" type="text" placeholder="what are you listening to?" maxlength="80" aria-label="What are you listening to? (optional)">
+    <button type="submit">save</button>
+    <button type="button" id="save-cancel">cancel</button>
+  </form>
+
   <div id="hud" hidden>
     <p id="mood"><span id="mood-song" hidden></span><span id="mood-word">listening…</span> <span id="mood-detail"></span></p>
     <nav class="links">
