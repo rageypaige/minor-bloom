@@ -801,6 +801,9 @@ void main(){
           if (this._devSync) this._devSync();
         }
       });
+      // TWEAKS: overall multipliers on the music-driven shape and light, set
+      // from the ?dev panel (1 = as designed)
+      this.tw = { waves: 1, thick: 1, spread: 1, speed: 1, wavy: 1, bright: 1, ripples: 1 };
       if (q.has('dev')) this._devPanel();
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
@@ -1137,7 +1140,7 @@ void main(){
         this.ripCool = (this.ripCool || 0);
         const R = this.dims ? this.dims.rhythm : 0.3;
         if (rel > 0.85 - 0.45 * R && this.ripCool <= 0 && this.ripples.length < 4) {
-          const amp = 0.07 * rel * (0.12 + 0.88 * R);
+          const amp = 0.07 * rel * (0.12 + 0.88 * R) * (this.tw ? this.tw.ripples : 1);
           const sp = (this.spreadNow || 0.8) * 0.5;
           if (this.guides && this.g) {
             // guided: start on the gesture, so the wave travels through it
@@ -1271,18 +1274,18 @@ void main(){
       gl.uniform1f(P.u.u_asp, this.asp);
       const tension = this.tension || 0, quiet = this.quietAmt || 0;
       gl.uniform1f(P.u.u_freq, (1.0 + 0.3 * mid) * M.curve);     // MID + MOOD: the curvature of the filaments
-      gl.uniform1f(P.u.u_warp, (0.5 + 0.5 * mid + 0.25 * tension) * M.fold); // MID + TENSION: how they fold
-      gl.uniform1f(P.u.u_levels, (1.4 + 0.8 * lush + 0.5 * vol) * M.density); // INTENSITY + MOOD: strand density
-      gl.uniform1f(P.u.u_thick, clamp((0.08 + 0.34 * vol) * M.thick, 0.03, 0.42)); // INTENSITY + MOOD: thickness
+      gl.uniform1f(P.u.u_warp, (0.5 + 0.5 * mid + 0.25 * tension) * M.fold * this.tw.wavy); // MID + TENSION: how they fold
+      gl.uniform1f(P.u.u_levels, (1.4 + 0.8 * lush + 0.5 * vol) * M.density * this.tw.waves); // INTENSITY + MOOD: strand density
+      gl.uniform1f(P.u.u_thick, clamp((0.08 + 0.34 * vol) * M.thick * this.tw.thick, 0.02, 0.8)); // INTENSITY + MOOD: thickness
       gl.uniform1f(P.u.u_pull, 3.5 + 2 * (1 - high));            // tighter lines when it's clean
       // MID + TEMPO + MOOD: the filaments' expressive movement (not volume);
       // it softens and slows in quiet passages
-      gl.uniform1f(P.u.u_flow, (0.03 + 0.11 * mid) * tempo * M.speed * (1 + 0.5 * M.instab * acc) * (1 - 0.65 * quiet));
+      gl.uniform1f(P.u.u_flow, (0.03 + 0.11 * mid) * tempo * M.speed * (1 + 0.5 * M.instab * acc) * (1 - 0.65 * quiet) * this.tw.speed);
       gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust); // HIGH + SILENCE: strands fray into dust
       gl.uniform1f(P.u.u_turb, (M.turb * (0.5 + 0.5 * mid) + 0.45 * tension) * (this.guides ? GUIDE.turb : 1)); // MOOD + TENSION: turbulence
       const FU = { // the field's shape, shared with the silk tangent pass
         u_time: this.evolveT ?? this.t, u_freq: (1.0 + 0.3 * mid) * M.curve,
-        u_warp: (0.5 + 0.5 * mid + 0.25 * tension) * M.fold, u_deep: 0.06 + 0.32 * bass, u_deepPh: this.deepPh || 0,
+        u_warp: (0.5 + 0.5 * mid + 0.25 * tension) * M.fold * this.tw.wavy, u_deep: 0.06 + 0.32 * bass, u_deepPh: this.deepPh || 0,
         u_bassAmp: (0.04 + 0.2 * bass) * M.swell, u_bassPhase: this.bassPhase, u_ang: this.ang,
         u_cross: this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension), u_crossAng: 1.05 + 0.4 * Math.sin(this.t * 0.02),
       };
@@ -1297,7 +1300,7 @@ void main(){
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension)); // MOOD + TENSION: intersecting currents
       gl.uniform1f(P.u.u_crossAng, 1.05 + 0.4 * Math.sin(this.t * 0.02));
       gl.uniform2f(P.u.u_seedOff, (this.seedOff || [0, 0])[0], (this.seedOff || [0, 0])[1]);
-      this.spreadNow = (0.5 + 0.35 * lush + 0.35 * vol) * M.spread * (1 - 0.2 * (this.quietAmt || 0)) * (this.guides && this.g ? this.g.scale : 1); // INTENSITY + MOOD (+ VARIETY scale): expansion
+      this.spreadNow = (0.5 + 0.35 * lush + 0.35 * vol) * M.spread * (1 - 0.2 * (this.quietAmt || 0)) * (this.guides && this.g ? this.g.scale : 1) * this.tw.spread; // INTENSITY + MOOD (+ VARIETY scale): expansion
       gl.uniform1f(P.u.u_spread, this.spreadNow);                // FULLNESS: how far it spreads
       gl.uniform1f(P.u.u_bassAmp, (0.04 + 0.2 * bass) * M.swell); // LOW + MOOD: a slow swell
       gl.uniform1f(P.u.u_bassPhase, this.bassPhase);
@@ -1474,7 +1477,7 @@ void main(){
       gl.uniform4f(P.u.u_show, ly === 'all' || ly === 'trails' ? 1 : 0, ly === 'all' || ly === 'arcs' ? 1 : 0,
         ly === 'all' || ly === 'veil' ? 1 : 0, ly === 'all' || ly === 'glow' ? 1 : 0);
       // quiet passages sit lower; intense ones open up
-      gl.uniform1f(P.u.u_exposure, 0.95 + 0.75 * lum2);
+      gl.uniform1f(P.u.u_exposure, (0.95 + 0.75 * lum2) * this.tw.bright);
       const tint = this.colA.map((v) => v * 0.02);
       gl.uniform3fv(P.u.u_base, this.R.palette === 'ink' ? INK_GROUND.map((v, i) => v * 0.8 + tint[i] * 0.5) : [0.03 + tint[0], 0.03 + tint[1], 0.04 + tint[2]]);
       const sa = new Float32Array(MAXS * 4);
@@ -1522,46 +1525,112 @@ void main(){
       tag._t = setTimeout(() => { tag.style.opacity = 0; }, 1600);
     }
 
-    // ?dev: a small panel of sliders for the rendering controls above
+    // ?dev: a panel of plain-language sliders for experimenting. Changes are
+    // live; they are remembered in this browser (on the ?dev link only), and
+    // "copy settings" copies them to paste into a message. T hides the panel.
     _devPanel() {
-      const R = this.R;
-      const specs = [
-        ['trailBase', 0, 1, 0.01], ['trailVol', 0, 1.2, 0.01], ['trailOpacity', 0, 1.5, 0.05], ['comp', 0, 1, 0.05],
-        ['silkBright', 0, 3, 0.02], ['stride', 1, 12, 1], ['len', 0.02, 0.25, 0.01], ['veil', 0, 2, 0.05], ['glow', 0, 3, 0.05],
-        ['ribbon', 0, 1, 0.05], ['asym', 0, 1, 0.05], ['widthVar', 0, 1, 0.05], ['edgeSoft', 0.03, 1, 0.01],
-        ['falloff', 0.5, 4, 0.1], ['densityVar', 0, 1, 0.05], ['dissolve', 0, 0.8, 0.02], ['twist', 0, 2.5, 0.05], ['gain', 0.5, 4, 0.05],
-        ['channels', 0, 1, 0.05], ['channelScale', 0.5, 5, 0.1], ['layers', 0, 1.5, 0.05], ['clarity', 0, 1, 0.05], ['compress', 0, 1.5, 0.05], ['saturation', 0.5, 2.5, 0.05], ['yellowShift', 0, 1.2, 0.05],
-        ['arcFocus', 0, 1, 0.05], ['toe', 0, 0.9, 0.05], ['localContrast', 0, 1, 0.05], ['halation', 0, 1.5, 0.05],
-        ['splitTone', 0, 1, 0.05], ['colourDrift', 0, 1, 0.05], ['grain', 0, 1.5, 0.05],
+      const R = this.R, TW = this.tw, G = GUIDE;
+      const DEF = { R: { ...R }, TW: { ...TW }, G: { ...G } };
+      const S = [
+        ['Shape and movement'],
+        ['Number of waves', 'How many wave lines there are', TW, 'waves', 0.3, 2.5, 0.05],
+        ['Wave thickness', 'How wide each wave is', TW, 'thick', 0.3, 3, 0.05],
+        ['Size of the whole form', 'How far the waves spread across the screen', TW, 'spread', 0.4, 1.8, 0.05],
+        ['Big sweeping curve', 'How much the whole gesture rises and falls', G, 'sweepAmp', 0, 0.45, 0.01],
+        ['Bends and folds', 'Medium-size bends along the waves', G, 'foldAmp', 0, 0.2, 0.005],
+        ['Small wiggles', 'Smaller wobble inside the waves (lower = smoother)', TW, 'wavy', 0, 2.5, 0.05],
+        ['Fine roughness', 'The finest texture in the waves (lower = smoother)', G, 'fine', 0, 1, 0.05],
+        ['Turbulence', 'How much particles get pushed off their lines', G, 'turb', 0, 1.5, 0.05],
+        ['Curls', 'How often the folds swell into curls', G, 'curl', 0, 3, 0.05],
+        ['Flow speed', 'How fast the light streams along the waves', TW, 'speed', 0, 3, 0.05],
+        ['Tilting', 'How far the whole form turns over time', G, 'orient', 0, 2, 0.05],
+        ['Beat ripples', 'How strongly beats send ripples through the waves', TW, 'ripples', 0, 3, 0.05],
+        ['Light and texture'],
+        ['Brightness', 'Overall exposure', TW, 'bright', 0.3, 2.5, 0.05],
+        ['Trail length', 'How long each particle leaves a trail', R, 'trailBase', 0, 1, 0.01],
+        ['Particle trails', 'How much the particle trails show', R, 'trailOpacity', 0, 1.5, 0.05],
+        ['Silk streaks', 'The short bright streaks along the waves', R, 'silkBright', 0, 3, 0.05],
+        ['Haze', 'The soft veil of light around the waves', R, 'veil', 0, 2.5, 0.05],
+        ['Glow', 'Soft glow around the brightest parts', R, 'glow', 0, 4, 0.05],
+        ['Warm halo', 'Warm bleed around the strongest highlights', R, 'halation', 0, 2, 0.05],
+        ['Shadow depth', 'Holds faint light lower, for deeper darkness', R, 'toe', 0, 0.9, 0.05],
+        ['Grain', 'Film grain', R, 'grain', 0, 2, 0.05],
+        ['Colour'],
+        ['Colour richness', 'Saturation (1 = natural)', R, 'saturation', 0, 2.5, 0.05],
+        ['Warm highlights / cool shadows', 'Brighter light leans warm, dimmer leans cool', R, 'splitTone', 0, 1, 0.05],
+        ['Shimmer of colour', 'A gentle hue drift across the waves', G, 'irid', 0, 1.2, 0.02],
+        ['Bright colours stay coloured', 'Keeps the brightest parts from turning white', R, 'compress', 0, 2, 0.05],
       ];
-      const box = document.createElement('div');
-      box.style.cssText = 'position:fixed;top:12px;left:12px;z-index:9;padding:10px 12px;background:rgba(10,10,16,.8);color:#ddd;font:12px Inter,system-ui,sans-serif;border-radius:6px;line-height:1.9';
-      const inputs = {};
-      for (const [k, lo, hi, st] of specs) {
-        const row = document.createElement('label');
-        row.style.cssText = 'display:grid;grid-template-columns:88px 120px 40px;gap:6px;align-items:center';
-        const inp = document.createElement('input');
-        Object.assign(inp, { type: 'range', min: lo, max: hi, step: st, value: R[k] });
-        const val = document.createElement('span');
-        val.textContent = R[k];
-        inp.addEventListener('input', () => { R[k] = +inp.value; val.textContent = inp.value; });
-        row.append(k, inp, val);
-        box.append(row);
-        inputs[k] = [inp, val];
-      }
-      const sel = document.createElement('select');
-      LAYERS.forEach((n, i) => sel.add(new Option('view: ' + n, i)));
-      sel.addEventListener('change', () => { this.layer = +sel.value; });
-      const pre = document.createElement('select');
-      Object.keys(RENDER_PRESETS).forEach((n) => pre.add(new Option('preset: ' + n, n)));
-      pre.value = Object.keys(RENDER_PRESETS).find((n) => ['trailBase', 'veil', 'ribbon', 'layers', 'saturation', 'toe', 'palette'].every((k) => RENDER_PRESETS[n][k] === R[k])) || DEFAULT_PRESET;
-      pre.addEventListener('change', () => { Object.assign(R, RENDER_PRESETS[pre.value]); this._devSync(); });
-      box.append(sel, document.createElement('br'), pre);
-      this._devSync = () => {
-        sel.value = this.layer;
-        for (const k in inputs) { inputs[k][0].value = R[k]; inputs[k][1].textContent = R[k]; }
+      const KEY = 'minorbloom-tune';
+      const save = () => { try { localStorage.setItem(KEY, JSON.stringify(this._tuneState())); } catch (e) { /* storage off */ } };
+      this._tuneState = () => {
+        const out = {};
+        for (const sp of S) if (sp.length > 1) out[sp[3]] = +sp[2][sp[3]].toFixed(3);
+        return out;
       };
+      // restore what was set last time (on the ?dev link only)
+      try {
+        const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+        if (saved) for (const sp of S) if (sp.length > 1 && saved[sp[3]] != null) sp[2][sp[3]] = saved[sp[3]];
+      } catch (e) { /* storage off */ }
+
+      const box = document.createElement('div');
+      box.id = 'tune';
+      box.style.cssText = 'position:fixed;top:12px;left:12px;z-index:9;width:330px;max-height:calc(100vh - 24px);overflow:auto;padding:12px 14px;background:rgba(14,12,20,.86);color:#e6e1ea;font:12px Inter,system-ui,sans-serif;border-radius:8px;line-height:1.5';
+      const head = document.createElement('div');
+      head.innerHTML = '<b style="font-weight:600">Experiment</b> <span style="opacity:.6">· T hides this panel</span>';
+      box.append(head);
+      const inputs = [];
+      for (const sp of S) {
+        if (sp.length === 1) {
+          const h = document.createElement('div');
+          h.textContent = sp[0];
+          h.style.cssText = 'margin:12px 0 4px;color:#a89cb4;text-transform:uppercase;letter-spacing:.1em;font-size:10px';
+          box.append(h);
+          continue;
+        }
+        const [label, help, obj, key, lo, hi, st] = sp;
+        const row = document.createElement('label');
+        row.title = help;
+        row.style.cssText = 'display:grid;grid-template-columns:1fr 46px;gap:2px 8px;align-items:center;margin:4px 0';
+        const name = document.createElement('span');
+        name.textContent = label;
+        const val = document.createElement('span');
+        val.style.cssText = 'text-align:right;opacity:.75;font-variant-numeric:tabular-nums';
+        const inp = document.createElement('input');
+        Object.assign(inp, { type: 'range', min: lo, max: hi, step: st });
+        inp.style.cssText = 'grid-column:1 / 3;width:100%;margin:0';
+        const show = () => { inp.value = obj[key]; val.textContent = (+obj[key]).toFixed(st < 0.05 ? 2 : 2); };
+        inp.addEventListener('input', () => { obj[key] = +inp.value; val.textContent = (+inp.value).toFixed(2); save(); });
+        row.append(name, val, inp);
+        box.append(row);
+        inputs.push(show);
+        show();
+      }
+      const btns = document.createElement('div');
+      btns.style.cssText = 'display:flex;gap:8px;margin-top:12px';
+      const mk = (t, fn) => { const b = document.createElement('button'); b.textContent = t; b.style.cssText = 'flex:1;font:12px Inter,system-ui,sans-serif;color:#e6e1ea;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:5px;padding:6px'; b.addEventListener('click', fn); btns.append(b); return b; };
+      const copyBtn = mk('copy settings', async () => {
+        const text = 'Minor Bloom settings: ' + JSON.stringify(this._tuneState());
+        try { await navigator.clipboard.writeText(text); copyBtn.textContent = 'copied!'; }
+        catch (e) { window.prompt('Copy these settings:', text); }
+        setTimeout(() => { copyBtn.textContent = 'copy settings'; }, 1500);
+      });
+      mk('reset', () => {
+        Object.assign(R, DEF.R); Object.assign(TW, DEF.TW); Object.assign(G, DEF.G);
+        try { localStorage.removeItem(KEY); } catch (e) { /* storage off */ }
+        inputs.forEach((f) => f());
+      });
+      box.append(btns);
+      const note = document.createElement('div');
+      note.style.cssText = 'margin-top:8px;opacity:.6';
+      note.textContent = 'Hover a slider for what it does. Your settings are kept on this link only; the normal site is unchanged.';
+      box.append(note);
+      this._devSync = () => inputs.forEach((f) => f());
       document.body.appendChild(box);
+      window.addEventListener('keydown', (e) => {
+        if ((e.key === 't' || e.key === 'T') && !(e.target instanceof HTMLInputElement)) box.hidden = !box.hidden;
+      });
     }
 
     // A still of the current moment, for saving.

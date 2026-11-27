@@ -68,56 +68,18 @@ phone with **audio file**.
   ribbon's current shape, a few brighter signature strands and a soft veil
   of coloured light around them. Rendering only: the movement is identical.
   Tuning lives in the `RENDER_PRESETS` table in `js/waves.js`.
-- **Rendering development controls**: `?dev` shows sliders for trail
-  length, trail opacity, brightness make-up for short trails, the silk arcs
-  (brightness, stride, length), the veil and the glow; **L** (or
-  `?layer=trails|arcs|veil|glow`) shows each rendering layer on its own.
-  The default is the `ink` preset: `gallery` with Paige's ink palette, a
-  ramp from cool to warm: petrol ink #284F5B, storm blue #526B86, bruised
-  plum #70516D, black cherry #8E475B, copper rose #B7796B and tarnished
-  gold #B59A66, on aubergine charcoal #111016. Minor-leaning harmony sits
-  at petrol ink and storm blue, in-between harmony at bruised plum and black
-  cherry, major-leaning at copper rose and tarnished gold; the key nudges
-  the position a little, and chords move the second colour along the same
-  ramp (never off the palette). Split-toning is off and saturation eased so
-  the palette leads. `?render=gallery` shows the previous colours.
-  The `gallery` preset is a refinement of `vivid` toward
-  experimental photography (rendering only): the short crisp streaks gather
-  at the concentrated bends and fade elsewhere so the detail blends into
-  the light (`arcFocus`); less haze; faint diffuse light held lower for rich
-  shadows and generous darkness, eased in quiet music (`toe`); a little
-  local contrast so bends read clearly (`localContrast`); a warm, slightly
-  irregular halation only around the strongest highlights (`halation`);
-  split-toned colour, brighter light leaning amber and rose and dimmer light
-  mauve and violet, with a slow drift so warm and cool coexist within one
-  formation (`splitTone`, `colourDrift`); restrained saturation; and much
-  finer grain (`grain`). `?render=vivid` shows the previous look.
-  The `vivid` preset is the `tuned` look with richer colour
-  (`saturation`, 1 = as before; the brightest light is also compressed,
-  `compress`, so it keeps its colour instead of washing out to white).
-  `?render=tuned` shows it without. An experimental `curtain` preset
-  (`?render=curtain`) adds to the `tuned` look (long, faint trails;
-  short, bright silk strokes from a sparse set of particles; a strong veil
-  and glow) plus an experimental **asymmetric ribbon profile**. Across the
-  ribbon, the light gathers into a luminous edge on one side and falls away
-  nonlinearly into darkness on the other; the width swells into broad
-  sheets and narrows into fine ribbons along its length; the bright edge
-  migrates across as the ribbon seems to twist; soft bands of density run
-  through it; and some stretches dissolve. All of it is smooth, slow
-  variation along the ribbon, and only changes how much light each particle
-  gives, never where it goes. Sliders: `ribbon` (amount), `asym`,
-  `widthVar`, `edgeSoft`, `falloff`, `densityVar`, `dissolve`, `twist` and
-  `gain`. `?render=tuned` shows the look without it.
-  On top of that, the experimental `sheer` preset (`?render=sheer`) makes the interior read like
-  layers of illuminated sheer fabric: the inside of each formation turns
-  more transparent while the luminous edge stays defined (`clarity`),
-  darker translucent channels run through the lit material (`channels`,
-  `channelScale`), a second, fainter sheet overlaps inside the first with
-  its own soft edge (`layers`), and the brightest light is compressed so it
-  keeps its colour and detail instead of burning out to white (`compress`).
-  Each is 0 = off; `?render=curtain` shows the look without any of them.
-  `?render=baseline` and `?render=shortTrails` show the earlier looks. These
-  change only how the light is drawn, never how the particles move.
+- **Experiment panel**: open with `?dev`. Plain-language sliders for the
+  shape and movement (number of waves, thickness, size, the big sweeping
+  curve, bends, wiggles, roughness, turbulence, curls, flow speed, tilting,
+  beat ripples), the light and texture (brightness, trails, silk streaks,
+  haze, glow, warm halo, shadow depth, grain) and the colour (richness,
+  warm highlights / cool shadows, colour shimmer, keeping bright colours
+  coloured). Hover a slider for what it does. Changes are live and are
+  remembered in your browser on the `?dev` link only; **copy settings**
+  copies them so they can be pasted into a message; **reset** restores the
+  defaults; **T** hides the panel. **L** still shows each light layer on
+  its own.
+
 - **Unguided particle waves**, at
   [paigelatimer.ca/minor-bloom/?style=waves](https://paigelatimer.ca/minor-bloom/?style=waves): tens of thousands of particles of light
   stream along flowing wave lines, layering into silky sheets in a night sky.
