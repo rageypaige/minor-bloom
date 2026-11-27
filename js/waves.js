@@ -67,8 +67,22 @@ float h1(float x){ return fract(sin(x * 127.1) * 43758.5453); }`;
 uniform float u_guide, u_gBand, u_gPull, u_gWarp, u_gSwell, u_gArch, u_gLen, u_gFine;
 uniform vec3 u_gA, u_gK, u_gPh, u_gTw;
 // (u_gArch bows the whole gesture into an arc)
-float gY(float x){ return u_gA.x * sin(u_gK.x * x + u_gPh.x) + u_gA.y * sin(u_gK.y * x + u_gPh.y) + u_gA.z * sin(u_gK.z * x + u_gPh.z) + u_gArch * x * x; }
-float gDY(float x){ return u_gA.x * u_gK.x * cos(u_gK.x * x + u_gPh.x) + u_gA.y * u_gK.y * cos(u_gK.y * x + u_gPh.y) + u_gA.z * u_gK.z * cos(u_gK.z * x + u_gPh.z) + 2. * u_gArch * x; }
+// THE FREE-DRAWN LINE: a smooth curve through 9 heights spread along the
+// gesture (u_gSpan either side of the centre), each moving up and down on its
+// own like a string; added to the layered sines
+uniform float u_gH[9]; uniform float u_gSpan;
+float gHt(int i){ return u_gH[clamp(i, 0, 8)]; }
+float gLine(float x, out float dydx){
+  float u = clamp((x / u_gSpan * .5 + .5) * 8., 0., 8.);
+  int i = int(min(floor(u), 7.)); float t = u - float(i);
+  float p0 = gHt(i - 1), p1 = gHt(i), p2 = gHt(i + 1), p3 = gHt(i + 2);
+  float a = -p0 + p2, b = 2. * p0 - 5. * p1 + 4. * p2 - p3, c = -p0 + 3. * p1 - 3. * p2 + p3;
+  float inside = step(abs(x), u_gSpan);
+  dydx = .5 * (a + 2. * b * t + 3. * c * t * t) * (4. / u_gSpan) * inside;
+  return .5 * (2. * p1 + a * t + b * t * t + c * t * t * t);
+}
+float gY(float x){ float d; return u_gA.x * sin(u_gK.x * x + u_gPh.x) + u_gA.y * sin(u_gK.y * x + u_gPh.y) + u_gA.z * sin(u_gK.z * x + u_gPh.z) + u_gArch * x * x + gLine(x, d); }
+float gDY(float x){ float d; gLine(x, d); return u_gA.x * u_gK.x * cos(u_gK.x * x + u_gPh.x) + u_gA.y * u_gK.y * cos(u_gK.y * x + u_gPh.y) + u_gA.z * u_gK.z * cos(u_gK.z * x + u_gPh.z) + 2. * u_gArch * x + d; }
 // signed distance from the guide (approximate), in the guide's frame
 float gDist(vec2 r){ float sl = gDY(r.x); return (r.y - gY(r.x)) / sqrt(1. + sl * sl); }
 // 1 = full width; smaller where the ribbon pinches and turns over
@@ -689,6 +703,10 @@ void main(){
     fine: 0.5,          // share of the fine warp octave kept (1 = as before; less = less crosshatching)
     // MUSIC RESHAPES THE WAVE (all smooth, over seconds):
     shapeMusic: 1,      // how much the music reshapes it (0 = fixed shape)
+    line: 0.85,         // free-drawn line: its share of the shape (0 = the layered sines only)
+    lineAmp: 1,         //   how high it swings
+    lineSpeed: 1,       //   how quickly its points rise and fall
+    pluck: 1,           //   how strongly beats pluck it
     turnMusic: 0.6,     // how far it turns with the music (radians)
     driftMusic: 1,      // how much it moves around the screen with energy
     irid: 0.72,         // rad: max secondary-hue shift (iridescence; 0 = off)
@@ -1111,13 +1129,58 @@ void main(){
       // length of the gesture across the screen for its current orientation
       g.len = Math.abs(Math.cos(this.ang)) * this.asp + Math.abs(Math.sin(this.ang));
       g.K = g.K.map((k) => k * Math.max(1, this.asp) / Math.max(0.8, g.len));
+
+      // ---- THE FREE-DRAWN LINE: 9 heights along the gesture, each rising
+      // and falling on its own (slow, related noise), like a string: they
+      // pull on their neighbours, so a movement travels along the line, and
+      // strong beats pluck it (see update). Calm music flattens it,
+      // energetic music swings it; busier music moves it faster.
+      const LN = G.line;
+      g.A[0] *= 1 - 0.95 * LN;
+      g.A[1] *= 1 - 0.95 * LN;
+      g.span = g.len * 0.5 * 1.15;
+      g.H = g.H || new Float32Array(9);
+      g.Hv = g.Hv || new Float32Array(9);
+      g.Hph = (g.Hph ?? rnd(0, 50)) + dt * G.lineSpeed * (0.05 + 0.18 * mid + 0.12 * Vv);
+      const amp = LN * G.lineAmp * g.scale * (0.03 + 0.2 * depth);
+      const steps = 4, h = dt / steps;
+      for (let st = 0; st < steps; st++) {
+        for (let i = 0; i < 9; i++) {
+          const target = amp * clamp(N(g.Hph + i * 0.62, sd * 2.1, 91) * 2.6, -1, 1);
+          const lap = (g.H[Math.max(0, i - 1)] + g.H[Math.min(8, i + 1)] - 2 * g.H[i]);
+          g.Hv[i] += (6 * (target - g.H[i]) + 14 * lap - 3.5 * g.Hv[i]) * h;
+        }
+        for (let i = 0; i < 9; i++) g.H[i] += g.Hv[i] * h;
+      }
     }
-    _gY(x) { const g = this.g; return g.A[0] * Math.sin(g.K[0] * x + g.ph[0]) + g.A[1] * Math.sin(g.K[1] * x + g.ph[1]) + g.A[2] * Math.sin(g.K[2] * x + g.ph[2]); }
+
+    // a strong beat plucks the line near a random point
+    _pluck(strength) {
+      const g = this.g;
+      if (!g || !g.Hv || !GUIDE.pluck) return;
+      const j = 1 + Math.floor(Math.random() * 7), sgn = Math.random() < 0.5 ? -1 : 1;
+      const k = GUIDE.pluck * strength * 0.9 * (g.scale || 1);
+      g.Hv[j] += sgn * k;
+      g.Hv[j - 1] += sgn * k * 0.5;
+      g.Hv[j + 1] += sgn * k * 0.5;
+    }
+    _gY(x) {
+      const g = this.g;
+      let y = g.A[0] * Math.sin(g.K[0] * x + g.ph[0]) + g.A[1] * Math.sin(g.K[1] * x + g.ph[1]) + g.A[2] * Math.sin(g.K[2] * x + g.ph[2]) + (g.arch || 0) * x * x;
+      if (g.H) {
+        const H = g.H, h = (i) => H[Math.max(0, Math.min(8, i))];
+        const u = Math.max(0, Math.min(8, (x / g.span * 0.5 + 0.5) * 8)), i = Math.min(7, Math.floor(u)), t = u - i;
+        const p0 = h(i - 1), p1 = h(i), p2 = h(i + 1), p3 = h(i + 2);
+        y += 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
+      }
+      return y;
+    }
     _setGuide(P) {
       const gl = this.gl, g = this.g;
       gl.uniform1f(P.u.u_guide, this.guides && g ? 1 : 0);
       if (!this.guides || !g) return;
       gl.uniform3f(P.u.u_gA, g.A[0], g.A[1], g.A[2]);
+      if (P.u.u_gH) { gl.uniform1fv(P.u.u_gH, g.H || new Float32Array(9)); gl.uniform1f(P.u.u_gSpan, g.span || 1); }
       gl.uniform3f(P.u.u_gK, g.K[0], g.K[1], g.K[2]);
       gl.uniform3f(P.u.u_gPh, g.ph[0], g.ph[1], g.ph[2]);
       gl.uniform3f(P.u.u_gTw, g.Tw[0], g.Tw[1], g.Tw[2]);
@@ -1182,6 +1245,7 @@ void main(){
             // guided: start on the gesture, so the wave travels through it
             const rx = rnd(-sp, sp) * this.asp, ry = this._gY(rx), ca = Math.cos(this.ang), sa = Math.sin(this.ang);
             this.ripples.push({ x: this.focus.x + ca * rx + sa * ry, y: this.focus.y - sa * rx + ca * ry, t: 0, a: amp });
+            this._pluck(rel * (0.3 + 0.7 * R));
           } else {
             this.ripples.push({ x: this.focus.x + rnd(-sp, sp) * this.asp, y: this.focus.y + rnd(-sp, sp) * 0.8, t: 0, a: amp });
           }
@@ -1597,6 +1661,10 @@ void main(){
         ['Dust', 'Specks that drift off the waves (with the highs and in quiet passages)', TW, 'dust', 0, 2, 0.05],
         ['Curls', 'How often the folds swell into curls', G, 'curl', 0, 3, 0.05],
         ['Music reshapes the wave', 'How much the music straightens, deepens and stretches it (0 = fixed shape)', G, 'shapeMusic', 0, 2, 0.05],
+        ['Free-drawn line', 'How much the wave is a freely moving line (vs. the repeating curve)', G, 'line', 0, 1, 0.05],
+        ['Line height', 'How high the line swings up and down', G, 'lineAmp', 0, 3, 0.05],
+        ['Line movement speed', 'How quickly its points rise and fall', G, 'lineSpeed', 0, 4, 0.05],
+        ['Beats pluck the line', 'How strongly beats pluck it, sending a ripple along it', G, 'pluck', 0, 3, 0.05],
         ['Turning with the music', 'How far the whole wave turns as the music changes', G, 'turnMusic', 0, 1.5, 0.05],
         ['Moving around', 'How much it drifts around the screen with energy', G, 'driftMusic', 0, 2, 0.05],
         ['Flow speed', 'How fast the light streams along the waves', TW, 'speed', 0, 3, 0.05],
