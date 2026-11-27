@@ -71,7 +71,9 @@ phone with **audio file**.
 - **Experiment panel**: open with `?dev`. Plain-language sliders for the
   shape and movement (number of waves, thickness, size, the big sweeping
   curve, bends, wiggles, roughness, turbulence, curls, flow speed, tilting,
-  beat ripples), the light and texture (brightness, trails, silk streaks,
+  beat ripples), the strands (how many, how fine, and a grounding **core
+  strand**: how many particles gather into it, its brightness, width and
+  where it runs across the wave), the light and texture (brightness, trails, silk streaks,
   haze, glow, warm halo, shadow depth, grain) and the colour (richness,
   warm highlights / cool shadows, colour shimmer, keeping bright colours
   coloured). Hover a slider for what it does. Changes are live and are

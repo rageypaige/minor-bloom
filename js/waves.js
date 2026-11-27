@@ -112,6 +112,7 @@ uniform sampler2D u_state;
 uniform float u_time, u_dt, u_asp;
 uniform float u_freq, u_warp, u_levels, u_pull, u_flow, u_dust, u_spread, u_bassAmp, u_bassPhase;
 uniform vec2 u_center, u_seedOff; uniform float u_ang, u_thick, u_cross, u_crossAng, u_turb, u_strands, u_deep, u_deepPh, u_loosen;
+uniform float u_spine, u_spinePos; // CORE STRAND: share of particles in it, and where across the wave
 uniform vec4 u_rip[4];
 out vec4 o;
 ${NOISE}
@@ -136,6 +137,8 @@ void main(){
   // clear gaps between them (fine filaments); other moods have many, which
   // blend into a silky ribbon.
   float lane = (floor(h1(seed * 4.3) * u_strands) + .5) / u_strands - .5;
+  // CORE STRAND: some particles gather into one lane that grounds the wave
+  if (h1(seed * 19.7) < u_spine) lane = u_spinePos;
   float d = fract(n * u_levels + lane * u_thick + .5 * u_guide) - .5;
   vec2 toLine = (-d / u_levels) * g / g2;
   // ...and streaming along it
@@ -251,6 +254,7 @@ void main(){ o = vec4(texture(u_prev, gl_FragCoord.xy / u_res).rgb * u_keep, 1.)
 precision highp float;
 uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_spread, u_visible, u_ang;
 uniform float u_mat, u_strands, u_cross, u_time;
+uniform float u_spine, u_coreBright, u_coreSize; // CORE STRAND
 // RIBBON PROFILE (rendering only): (amount, asymmetry, width variation,
 // edge softness), (density falloff, density variation, dissolve, twist)
 uniform vec4 u_rib1, u_rib2; uniform float u_ribGain;
@@ -364,6 +368,9 @@ void main(){
   // DEPTH: background (45%), middle (42%), foreground (13%)
   float lh = h1(s.w * 6.1);
   float layer = lh < .45 ? 0. : lh < .87 ? 1. : 2.;
+  // the core strand sits in the middle layer (no parallax, so it stays one line)
+  bool core = h1(s.w * 19.7) < u_spine;
+  if (core) layer = 1.;
   v_layer = layer;
   vec2 pos = s.xy;
   // the background sits a little further back: drawn slightly closer to the
@@ -373,6 +380,7 @@ void main(){
   float size = layer == 0. ? .75 : layer == 2. ? 1.35 : 1.;
   v_sharp = layer == 0. ? 0. : layer == 2. ? 1. : .55;
   v_a *= layer == 0. ? .45 : layer == 2. ? 1.15 : 1.;
+  if (core) { v_sharp = 1.; size *= u_coreSize; v_a *= u_coreBright; }
   v_sig = 0.;
 
   // SILK MATERIAL (rendering only; the particles move exactly the same).
@@ -803,7 +811,7 @@ void main(){
       });
       // TWEAKS: overall multipliers on the music-driven shape and light, set
       // from the ?dev panel (1 = as designed)
-      this.tw = { waves: 1, thick: 1, spread: 1, speed: 1, wavy: 1, bright: 1, ripples: 1 };
+      this.tw = { waves: 1, thick: 1, spread: 1, speed: 1, wavy: 1, bright: 1, ripples: 1, strands: 1, fine: 1, spine: 0, spinePos: 0, coreBright: 0.5, coreSize: 1.3 };
       if (q.has('dev')) this._devPanel();
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
@@ -1295,7 +1303,9 @@ void main(){
       const rip = new Float32Array(16);
       (this.ripples || []).slice(0, 4).forEach((r, i) => rip.set([r.x, r.y, r.t, r.a], i * 4));
       gl.uniform4fv(P.u.u_rip, rip);                             // PERCUSSION: ripples
-      gl.uniform1f(P.u.u_strands, Math.max(2, M.strands));       // MOOD: filaments or silk
+      gl.uniform1f(P.u.u_strands, Math.max(1, M.strands * this.tw.strands)); // MOOD: filaments or silk
+      gl.uniform1f(P.u.u_spine, this.tw.spine);
+      gl.uniform1f(P.u.u_spinePos, this.tw.spinePos);
       // (guided: no independent crossing currents)
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension)); // MOOD + TENSION: intersecting currents
       gl.uniform1f(P.u.u_crossAng, 1.05 + 0.4 * Math.sin(this.t * 0.02));
@@ -1379,9 +1389,12 @@ void main(){
       gl.uniform4f(P.u.u_rib2, R.falloff, R.densityVar, R.dissolve, R.twist);
       gl.uniform1f(P.u.u_ribGain, R.gain);
       gl.uniform4f(P.u.u_rib3, R.channels, R.channelScale, R.layers, R.clarity);
-      gl.uniform1f(P.u.u_strands, Math.max(2, M.strands));
+      gl.uniform1f(P.u.u_strands, Math.max(1, M.strands * this.tw.strands));
+      gl.uniform1f(P.u.u_spine, this.tw.spine);
+      gl.uniform1f(P.u.u_coreBright, this.tw.coreBright);
+      gl.uniform1f(P.u.u_coreSize, this.tw.coreSize);
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension));
-      gl.uniform1f(P.u.u_size, 2.4 * this.dpr);                 // thicker lines
+      gl.uniform1f(P.u.u_size, 2.4 * this.dpr * this.tw.fine);  // thicker lines
       gl.uniform3fv(P.u.u_colA, this.colA);
       gl.uniform3fv(P.u.u_colB, this.colB);
       gl.uniform3fv(P.u.u_colAcc, this.colAcc || [1, 1, 1]);
@@ -1545,6 +1558,13 @@ void main(){
         ['Flow speed', 'How fast the light streams along the waves', TW, 'speed', 0, 3, 0.05],
         ['Tilting', 'How far the whole form turns over time', G, 'orient', 0, 2, 0.05],
         ['Beat ripples', 'How strongly beats send ripples through the waves', TW, 'ripples', 0, 3, 0.05],
+        ['Strands'],
+        ['Number of strands', 'How many fine strands make up each wave (fewer = clearer gaps)', TW, 'strands', 0.1, 3, 0.05],
+        ['Strand fineness', 'How thick the particles that draw the strands are', TW, 'fine', 0.4, 2.5, 0.05],
+        ['Core strand', 'How many particles gather into one grounding strand (0 = none)', TW, 'spine', 0, 0.5, 0.01],
+        ['Core brightness', 'How bright the grounding strand is', TW, 'coreBright', 0, 3, 0.05],
+        ['Core width', 'How thick the grounding strand is', TW, 'coreSize', 0.5, 3, 0.05],
+        ['Core position', 'Where it runs across the wave (0 = middle, -0.5 / 0.5 = an edge)', TW, 'spinePos', -0.6, 0.6, 0.02],
         ['Light and texture'],
         ['Brightness', 'Overall exposure', TW, 'bright', 0.3, 2.5, 0.05],
         ['Trail length', 'How long each particle leaves a trail', R, 'trailBase', 0, 1, 0.01],
