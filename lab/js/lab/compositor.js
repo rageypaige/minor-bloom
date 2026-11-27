@@ -1,114 +1,76 @@
 // BLOOM LAB · RENDERING AND COMPOSITING
-// One full-screen pass. For every pixel and every formation, it finds the
-// nearest point on the formation's spine: how far along the body (s) and
-// how far across it relative to the local width (u, -1..1). The optical
-// material turns (s, u) into light: a soft, asymmetric interior; a defined
-// rim only where the body's edge is lit; edge softness that varies along
-// its length; tapering ends. The space itself is gently bent by a slow
-// noise field first, so shapes fold organically. Formations are layered
-// back to front like coloured gels: each adds its light and slightly dims
-// what lies behind it. No particles, trails or lines.
+// Each formation is drawn as a mesh (K x M vertices) built in the vertex
+// shader from its samples (geometry.js). For every vertex the shader also
+// works out how much of the sheet is squeezed into each bit of screen (the
+// surface's projected density): face-on, light spreads thin (a soft veil);
+// edge-on or folded, it concentrates (a defined edge of light); where the
+// sheet folds over itself, both layers add. Sheets are drawn additively
+// into a float light buffer, then tone-mapped onto the ground. No
+// particles or trails: one pass of surfaces per frame.
 (function () {
   const MB = (window.MB = window.MB || {});
-  const { NS } = MB.LabGeometry;
-  const NF = 3, NP = NS + 1;
+  const { K, M, MAXF } = MB.LabGeometry;
 
-  const VS = `#version 300 es
+  const SHEET_VS = `#version 300 es
+precision highp float;
+uniform sampler2D u_geo; uniform int u_f; uniform float u_asp, u_conc;
+out vec2 v_sv; out float v_I; out vec2 v_attr; out float v_z;
+const int K = ${K}, M = ${M};
+vec4 T(int k, int c){ return texelFetch(u_geo, ivec2(k * 2 + c, u_f), 0); }
+// position on the sheet: spine + width * (twisted, curled cross-section);
+// z is depth (toward / away from the viewer)
+vec3 P3(int k, float v){
+  vec4 a = T(k, 0), b = T(k, 1);
+  vec2 n = vec2(cos(a.z), sin(a.z));
+  float c = cos(b.x), sn = sin(b.x), q = b.y * (v * v - .333);
+  return vec3(a.xy + n * a.w * (v * c - q * sn), a.w * (v * sn + q * c));
+}
+void main(){
+  int quad = gl_VertexID / 6, corner = gl_VertexID % 6;
+  int qi = quad % (K - 1), qj = quad / (K - 1);
+  int dx = (corner == 1 || corner == 4 || corner == 5) ? 1 : 0;
+  int dy = (corner == 2 || corner == 3 || corner == 5) ? 1 : 0;
+  int k = qi + dx;
+  float v = -1. + 2. * float(qj + dy) / float(M - 1);
+  vec3 p = P3(k, v);
+  // projected density: how the sheet's area maps onto the screen here
+  vec4 a = T(k, 0), b = T(k, 1);
+  vec2 Ps = (P3(min(k + 1, K - 1), v) - P3(max(k - 1, 0), v)).xy;
+  vec2 n = vec2(cos(a.z), sin(a.z));
+  vec2 Pv = n * a.w * (cos(b.x) - 2. * b.y * v * sin(b.x));
+  float J = abs(Ps.x * Pv.y - Ps.y * Pv.x);
+  float J0 = length(Ps) * a.w;                    // the same stretch seen face-on
+  v_I = J0 / sqrt(J * J + J0 * J0 / (u_conc * u_conc));
+  v_sv = vec2(float(k) / float(K - 1), v);
+  v_attr = b.zw;                                  // edge softness, light along the body
+  v_z = p.z / max(a.w, 1e-4);
+  gl_Position = vec4(p.x / (u_asp * .5), p.y / .5, 0., 1.);
+}`;
+
+  const SHEET_FS = `#version 300 es
+precision highp float;
+in vec2 v_sv; in float v_I; in vec2 v_attr; in float v_z;
+uniform vec3 u_colA, u_colB; uniform float u_bright, u_soft, u_backDim;
+out vec4 o;
+void main(){
+  float soft = clamp(v_attr.x * u_soft, .03, 1.);
+  float edge = smoothstep(1., 1. - soft, abs(v_sv.y));          // edge definition varies along the body
+  float ends = smoothstep(0., .14, v_sv.x) * smoothstep(1., .86, v_sv.x);
+  float back = 1. - u_backDim * smoothstep(-.3, .6, v_z);        // the far side is a little dimmer
+  vec3 col = mix(u_colA, u_colB, clamp(v_sv.x * .75 + .25 * (.5 + .5 * v_sv.y), 0., 1.));
+  o = vec4(col * v_I * edge * ends * back * v_attr.y * u_bright, 1.);
+}`;
+
+  const QUAD_VS = `#version 300 es
 void main(){ vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2. - 1., 0., 1.); }`;
 
-  const FS = `#version 300 es
+  const OUT_FS = `#version 300 es
 precision highp float;
-#define NF ${NF}
-#define NS ${NS}
-#define NP ${NP}
-uniform vec2 u_res; uniform float u_asp, u_time;
-uniform vec4 u_pts[NF * NP];          // per sample: x, y, half width, lit edge (-1..1)
-uniform vec3 u_colA[NF], u_colB[NF];  // colour along each body
-uniform float u_live[NF];             // each formation's light
-uniform float u_maxW[NF];             // each formation's widest half width (to skip empty space)
-uniform int u_order[NF];              // back to front
-uniform float u_density, u_asym, u_rim, u_soft, u_softVar, u_warp, u_warpScale;
-uniform float u_absorb, u_exposure, u_compress, u_sat, u_grain;
-uniform vec3 u_ground;
+uniform sampler2D u_light; uniform vec2 u_res; uniform float u_time, u_exposure, u_compress, u_sat, u_grain; uniform vec3 u_ground;
 out vec4 o;
-
-float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float vnoise(vec2 p){
-  vec2 i = floor(p), f = fract(p), u = f * f * (3. - 2. * f);
-  return mix(mix(h2(i), h2(i + vec2(1, 0)), u.x), mix(h2(i + vec2(0, 1)), h2(i + vec2(1, 1)), u.x), u.y);
-}
 float grainHash(vec2 p){ uvec2 q = uvec2(ivec2(floor(p))) * uvec2(1597334673U, 3812015801U); uint n = (q.x ^ q.y) * 1597334673U; return float(n) * (1. / 4294967295.); }
-// a slow, low-frequency vector field that bends the space (-.5 .. .5)
-vec2 warpField(vec2 p){
-  vec2 q = p * u_warpScale;
-  float a = vnoise(q + vec2(u_time * .02, 1.3)) + .5 * vnoise(q * 2.1 + vec2(7., -u_time * .015));
-  float b = vnoise(q + vec2(4.1, -u_time * .018)) + .5 * vnoise(q * 2.1 + vec2(-3., u_time * .02));
-  return vec2(a, b) / 1.5 - .5;
-}
-
 void main(){
-  vec2 uv = gl_FragCoord.xy / u_res;
-  vec2 p = vec2((uv.x - .5) * u_asp, uv.y - .5);
-  vec2 pw = p + warpField(p) * 2. * u_warp;
-  vec3 C = vec3(0.);
-  for (int k = 0; k < NF; k++) {
-    int f = u_order[k], base = f * NP;
-    // GEOMETRY: where this pixel sits relative to the formation's spine.
-    // First the nearest distance; then a smooth blend of the nearby stretches
-    // of spine (weighted by how close each is), so position along (s),
-    // signed distance across, width and lit edge all change continuously,
-    // with no seams where the nearest stretch jumps at a bend.
-    float dmin = 1e9;
-    for (int i = 0; i < NS; i++) {
-      vec4 a = u_pts[base + i], b = u_pts[base + i + 1];
-      vec2 ab = b.xy - a.xy;
-      float t = clamp(dot(pw - a.xy, ab) / max(dot(ab, ab), 1e-8), 0., 1.);
-      dmin = min(dmin, length(pw - (a.xy + ab * t)));
-    }
-    // far from this formation: nothing to draw (most of the screen)
-    if (dmin > u_maxW[f] * (1. + 2. * u_soft) + .01) continue;
-    float sw = 0., s = 0., sd = 0., w = 0., e = 0.;
-    for (int i = 0; i < NS; i++) {
-      vec4 a = u_pts[base + i], b = u_pts[base + i + 1];
-      vec2 ab = b.xy - a.xy;
-      float t = clamp(dot(pw - a.xy, ab) / max(dot(ab, ab), 1e-8), 0., 1.);
-      vec2 dq = pw - (a.xy + ab * t);
-      float d = length(dq);
-      float wi = mix(a.z, b.z, t);
-      float k = exp(-(d - dmin) / (.08 * wi + .003));
-      if (k < .002) continue;
-      vec2 n = normalize(vec2(-ab.y, ab.x) + 1e-9);
-      sw += k;
-      s += k * (float(i) + t) / float(NS);
-      sd += k * (dot(dq, n) >= 0. ? d : -d);
-      w += k * wi;
-      e += k * mix(a.w, b.w, t);
-    }
-    s /= sw; sd /= sw; w /= sw; e /= sw;
-    float u = sd / w;                              // -1..1 across the body
-    // MATERIAL
-    // edge softness varies along the body: crisp in places, dissolving in others
-    float sv = .5 + .5 * sin(s * 7.3 + float(f) * 2.1 + u_time * .07 + 1.7 * sin(s * 3.1 - u_time * .05));
-    float soft = u_soft * mix(1., .25 + 1.5 * sv, u_softVar);
-    float body = 1. - smoothstep(1. - soft, 1. + soft, abs(u));
-    // the lit side (and how strongly) changes gradually along the body
-    // (continuous through e = 0: there the body is evenly lit, so the lit
-    // side can cross over without a seam)
-    float ls = e >= 0. ? 1. : -1., la = smoothstep(0., .45, abs(e));
-    float across = clamp(.5 + .5 * u * ls, 0., 1.);      // 0 far side .. 1 lit side
-    float inner = mix(1., .04 + 1.5 * pow(across, 2.2), u_asym * la);
-    inner *= .55 + .45 * (1. - abs(u)) + .25 * across;   // a little thickness toward the core
-    // a defined rim only on the lit side, strongest where the edge is crisp
-    float rd = (u * ls - (1. - soft * .6)) / max(soft * .5, .035);
-    float rim = exp(-rd * rd) * la * (1. - sv * .6);
-    float ends = smoothstep(0., .14, s) * smoothstep(1., .86, s);
-    float dens = (body * inner * u_density + rim * u_rim * .6) * ends * u_live[f];
-    vec3 col = mix(u_colA[f], u_colB[f], clamp(s * .8 + .2 * across, 0., 1.));
-    // COMPOSITING: like a coloured gel, adds its light and dims what's behind
-    float alpha = 1. - exp(-dens * 1.5);
-    C = C * (1. - alpha * u_absorb) + col * dens;
-  }
-  // TONE: highlight compression (keeps colour), exposure, saturation, ground
+  vec3 C = texture(u_light, gl_FragCoord.xy / u_res).rgb;
   float lm = dot(C, vec3(.3, .59, .11)), kn = .5;
   if (u_compress > 0. && lm > kn) C *= (kn + (lm - kn) / (1. + (lm - kn) * u_compress * 2.)) / lm;
   vec3 tm = 1. - exp(-C * u_exposure);
@@ -123,6 +85,21 @@ void main(){
     constructor(canvas) {
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true }));
       if (!gl) throw new Error('WebGL2 is not available');
+      if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('Float render targets are not available');
+      this.sheet = this._prog(SHEET_VS, SHEET_FS);
+      this.out = this._prog(QUAD_VS, OUT_FS);
+      this.vao = gl.createVertexArray();
+      // geometry texture: 2 texels per sample, one row per formation
+      this.geo = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.geo);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, K * 2, MAXF, 0, gl.RGBA, gl.FLOAT, null);
+      this.data = new Float32Array(K * MAXF * 8);
+    }
+
+    _prog(vs, fs) {
+      const gl = this.gl;
       const sh = (type, src) => {
         const s = gl.createShader(type);
         gl.shaderSource(s, src);
@@ -130,41 +107,75 @@ void main(){
         if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
         return s;
       };
-      const p = (this.p = gl.createProgram());
-      gl.attachShader(p, sh(gl.VERTEX_SHADER, VS));
-      gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS));
+      const p = gl.createProgram();
+      gl.attachShader(p, sh(gl.VERTEX_SHADER, vs));
+      gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
       gl.linkProgram(p);
       if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-      this.u = {};
+      const u = {};
       const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
-      for (let i = 0; i < n; i++) {
-        const name = gl.getActiveUniform(p, i).name.replace(/\[0\]$/, '');
-        this.u[name] = gl.getUniformLocation(p, name);
-      }
-      this.vao = gl.createVertexArray();
-      this.pts = new Float32Array(NF * NP * 4);
+      for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+      return { p, u };
     }
 
-    // forms: [{ ctrl, depth, colA, colB, live }], M: material settings
-    render(forms, M, time, ground) {
-      const gl = this.gl, u = this.u, c = gl.canvas;
-      forms.forEach((F, f) => MB.LabGeometry.sampleSpine(F.ctrl, this.pts, f * NP));
-      const order = forms.map((F, i) => [F.depth, i]).sort((a, b) => b[0] - a[0]).map((x) => x[1]);
+    _target() {
+      const gl = this.gl, c = gl.canvas;
+      if (this.light && this.light.w === c.width && this.light.h === c.height) return this.light;
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, c.width, c.height, 0, gl.RGBA, gl.HALF_FLOAT, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      return (this.light = { tex, fb, w: c.width, h: c.height });
+    }
+
+    // forms: [{ colA, colB, bright }] (their shapes already built into
+    // this.data, one row each), Mt: material settings
+    render(forms, Mt, time, ground) {
+      const gl = this.gl, c = gl.canvas, L = this._target();
+      gl.bindTexture(gl.TEXTURE_2D, this.geo);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, K * 2, MAXF, gl.RGBA, gl.FLOAT, this.data);
+      // 1. sheets of light, added into the light buffer
+      gl.bindFramebuffer(gl.FRAMEBUFFER, L.fb);
       gl.viewport(0, 0, c.width, c.height);
-      gl.useProgram(this.p);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
       gl.bindVertexArray(this.vao);
-      gl.uniform2f(u.u_res, c.width, c.height);
-      gl.uniform1f(u.u_asp, c.width / c.height);
-      gl.uniform1f(u.u_time, time);
-      gl.uniform4fv(u.u_pts, this.pts);
-      gl.uniform3fv(u.u_colA, forms.flatMap((F) => F.colA));
-      gl.uniform3fv(u.u_colB, forms.flatMap((F) => F.colB));
-      gl.uniform1fv(u.u_live, forms.map((F) => F.live));
-      gl.uniform1fv(u.u_maxW, forms.map((F, f) => { let m = 0; for (let j = 0; j < NP; j++) m = Math.max(m, this.pts[(f * NP + j) * 4 + 2]); return m; }));
-      gl.uniform1iv(u.u_order, order);
-      for (const k of ['density', 'asym', 'rim', 'soft', 'softVar', 'warp', 'warpScale', 'absorb', 'exposure', 'compress', 'grain']) gl.uniform1f(u['u_' + k], M[k]);
-      gl.uniform1f(u.u_sat, M.saturation);
-      gl.uniform3fv(u.u_ground, ground);
+      const S = this.sheet;
+      gl.useProgram(S.p);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.geo);
+      gl.uniform1i(S.u.u_geo, 0);
+      gl.uniform1f(S.u.u_asp, c.width / c.height);
+      gl.uniform1f(S.u.u_conc, Mt.concentrate);
+      gl.uniform1f(S.u.u_soft, Mt.edgeSoft);
+      gl.uniform1f(S.u.u_backDim, Mt.backDim);
+      forms.forEach((F, f) => {
+        gl.uniform1i(S.u.u_f, f);
+        gl.uniform3fv(S.u.u_colA, F.colA);
+        gl.uniform3fv(S.u.u_colB, F.colB);
+        gl.uniform1f(S.u.u_bright, F.bright * Mt.flux);
+        gl.drawArrays(gl.TRIANGLES, 0, (K - 1) * (M - 1) * 6);
+      });
+      gl.disable(gl.BLEND);
+      // 2. tone map onto the ground
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      const O = this.out;
+      gl.useProgram(O.p);
+      gl.bindTexture(gl.TEXTURE_2D, L.tex);
+      gl.uniform1i(O.u.u_light, 0);
+      gl.uniform2f(O.u.u_res, c.width, c.height);
+      gl.uniform1f(O.u.u_time, time);
+      gl.uniform1f(O.u.u_exposure, Mt.exposure);
+      gl.uniform1f(O.u.u_compress, Mt.compress);
+      gl.uniform1f(O.u.u_sat, Mt.saturation);
+      gl.uniform1f(O.u.u_grain, Mt.grain);
+      gl.uniform3fv(O.u.u_ground, ground);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
   }
