@@ -26,31 +26,45 @@ its own module, `js/music.js`, so any new visual responds the same way:
   blue, bruised plum, black cherry, copper rose, tarnished gold), chosen by
   harmony and moved by chords; `MB.INK.ground` is the aubergine charcoal
 
-## What is new: translucent fields of light (prototype)
+## What is new: sculptural sheets of light (prototype)
 
-Three formations of continuous, translucent light, rendered per pixel on the
-GPU: no particles, trails or lines. Each formation is a smooth spine with a
-varying width and a lit edge that moves from side to side; every pixel is
-measured against the spines (how far along, how far across), and an optical
-material turns that into light: soft, asymmetric interiors, a defined rim
-only where the edge is lit, edge softness that varies along the body,
-tapering ends. The space is bent by a slow noise field so the shapes fold
-organically. Formations drift on slow noise, push each other apart when
-they meet, and are layered back to front like coloured gels.
+Formations are continuous, deformable **surfaces of light**, drawn as meshes
+on the GPU: no particles, trails or lines. Along each sheet, independently
+and slowly over time:
 
-For now the visuals follow a **synthetic input** (slow made-up curves for
-energy, harmony, tension, texture and variation), so the system can be
+- the spine bends, folds sharply in places, stretches and compresses;
+- the width swells into broad planes and fans, and narrows to threads;
+- the cross-section **twists** toward and away from the viewer, **curls**
+  into an arc and **skews**.
+
+Light behaves as if passing through a moving sheet: for every point, the
+renderer measures how compressed the surface appears on screen. Face-on it
+spreads into a soft veil; edge-on or folded it concentrates into a defined
+edge; where a sheet folds over itself, both layers add. So the defined
+edges come from the geometry itself, not added detail.
+
+The composition has a hierarchy: one dominant formation in front, and up to
+three secondary ones (smaller, dimmer, softer-edged, further back, partly
+off-screen). Each has its own deformation clock.
+
+For now the visuals follow a **synthetic input**, so the system can be
 developed before it is connected to the music. Press **A** to let it follow
-the music instead (experimental). `?dev` shows sliders for the material,
-the movement and the synthetic input (each input can be pinned).
+the music instead (experimental). `?dev` shows sliders:
+
+- formations: `count`, `curvature`, `fold`, `widthVar`, `orient`, `scale`,
+  `depth` (how far sheets twist), `speed` (deformation speed)
+- material: `flux` (face-on light), `concentrate` (edge brightness),
+  `edgeSoft`, `backDim`, `exposure`, `compress`, `saturation`, `grain`,
+  `scale` (render resolution)
+- the synthetic input (each value can be pinned)
 
 The systems are separate files in `js/lab/`:
 
 - `synth.js`: the synthetic input
-- `geometry.js`: formation spines (position, width, lit edge)
-- `motion.js`: how the formations drift, swell and interact (layouts here)
-- `material.js`: the optical material and compositing settings
-- `compositor.js`: the single GPU pass that renders and layers them
+- `geometry.js`: the deformable sheets (spine, width, twist, curl, skew)
+- `motion.js`: composition, hierarchy, drift and the shape parameters
+- `material.js`: how light passes through the sheets; compositing settings
+- `compositor.js`: draws the sheets into a light buffer and tone-maps them
 
 `js/lab.js` ties them together.
 
@@ -62,7 +76,7 @@ The previous renderers (the particle waves and the night sky) are on the
 - `index.html`, `css/style.css`: the page
 - `js/listener.js`: audio capture and analysis
 - `js/music.js`: the music, interpreted (layers, beats, dimensions, colour)
-- `js/lab.js` and `js/lab/`: the translucent light fields (see above)
+- `js/lab.js` and `js/lab/`: the sheets of light (see above)
 - `js/shared.js`: noise, palettes and mood words
 - `js/app.js`: ties it all together
 

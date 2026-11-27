@@ -1,10 +1,10 @@
-// BLOOM LAB: translucent fields of light (prototype).
+// BLOOM LAB: sculptural sheets of light (prototype).
 // Ties the independent systems together:
 //   js/lab/synth.js       synthetic input (stands in for the music for now)
-//   js/lab/geometry.js    formation spines: position, width, lit edge
-//   js/lab/motion.js      how the formations drift, swell and interact
-//   js/lab/material.js    the optical material and compositing settings
-//   js/lab/compositor.js  the one GPU pass that renders it all
+//   js/lab/geometry.js    deformable sheets: spine, width, twist, curl, skew
+//   js/lab/motion.js      composition, hierarchy, drift and shape parameters
+//   js/lab/material.js    how light passes through the sheets; compositing
+//   js/lab/compositor.js  draws the sheets and tone-maps them
 // The music is still read (js/music.js), for the words in the corner and
 // for later; for now the visuals follow the synthetic input. Press A to
 // let them follow the music instead (experimental), ?dev for sliders.
@@ -66,13 +66,13 @@
       const ramp = MB.INK.ramp, pos = input.palettePos ?? 2;
       const lit = 0.55 + 0.9 * (input.lumin ?? 0.4);
       // colour: each formation takes its own stretch of the palette, so warm
-      // and cool can sit side by side; the accent reaches a little further
-      const offs = [[0, 0.7], [0.6, 1.3], [1.3, 1.8]];
-      const forms = this.motion.forms.map((F, i) => ({
-        ctrl: F.ctrl, depth: F.depth,
-        colA: ramp(pos + offs[i][0]), colB: ramp(pos + offs[i][1]),
-        live: lit * [1, 0.85, 0.7][i],
-      }));
+      // and cool can sit side by side
+      const offs = [[0, 0.7], [0.7, 1.4], [-0.6, 0.2], [1.3, 1.9]];
+      const active = this.motion.active;
+      const forms = active.map((F, i) => {
+        MB.LabGeometry.buildFormation(this.comp.data, i, F, this.motion.p, F.t);
+        return { colA: ramp(pos + offs[i][0]), colB: ramp(pos + offs[i][1]), bright: lit * F.bright };
+      });
       this.comp.render(forms, this.material, this.t, MB.INK.ground);
     }
 
@@ -109,9 +109,11 @@
       head('material');
       const M = this.material, Rg = MB.LabMaterialRanges;
       for (const k in Rg) row(k, ...Rg[k], () => M[k], (v) => { M[k] = v; });
-      head('movement');
+      head('formations');
       const P = this.motion.p;
-      for (const k of ['drift', 'swell', 'repel', 'pace']) row(k, 0, 3, 0.05, () => P[k], (v) => { P[k] = v; });
+      const shape = { count: [1, 4, 1], curvature: [0, 2, 0.05], fold: [0, 1.5, 0.05], widthVar: [0, 1.5, 0.05],
+        orient: [-3.14, 3.14, 0.05], scale: [0.3, 2, 0.05], depth: [0, 1.5, 0.05], speed: [0, 4, 0.05] };
+      for (const k in shape) row(k, ...shape[k], () => P[k], (v) => { P[k] = v; });
       head('synthetic input (left end = automatic)');
       for (const k of ['energy', 'harm', 'tension', 'texture', 'variation']) {
         row(k, -0.05, 1, 0.01, () => this.synth.pin[k] ?? -0.05, (v) => { if (v < 0) delete this.synth.pin[k]; else this.synth.pin[k] = v; }, (v) => (v < 0 ? 'auto' : v.toFixed(2)));
