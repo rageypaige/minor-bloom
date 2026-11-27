@@ -670,7 +670,7 @@ void main(){
   const GUIDE = {
     // (speeds are kept below what the particles can follow, so the gesture
     // bends and travels without tearing apart)
-    sweepAmp: 0.19, sweepAmpVol: 0.05, sweepCycles: 1.0, sweepSpeed: 0.04, sweepSpeedEnergy: 0.04,
+    sweepAmp: 0.16, sweepAmpVol: 0.05, sweepCycles: 1.0, sweepSpeed: 0.04, sweepSpeedEnergy: 0.04,
     foldAmp: 0.065, foldAmpMid: 0.09, foldK: 2.1, foldSpeed: 0.08, foldSpeedMid: 0.22,
     rollAmp: 0.025, rollAmpBass: 0.1, rollK: 0.6, rollSpeed: 0.3,
     pinch: 0.5, pinchTension: 0.25, pinchK: 1.3, pinchSpeed: 0.08, pinchSpeedEnergy: 0.15,
@@ -691,7 +691,7 @@ void main(){
     scaleSpeed: 0.008,
     curl: 1.7,          // occasional swelling of the folds into curls/overlaps
     curlSpeed: 0.014,
-    fine: 0.25,         // share of the fine warp octave kept (1 = as before; less = less crosshatching)
+    fine: 0.5,          // share of the fine warp octave kept (1 = as before; less = less crosshatching)
     irid: 0.72,         // rad: max secondary-hue shift (iridescence; 0 = off)
   };
 
@@ -812,7 +812,7 @@ void main(){
       });
       // TWEAKS: overall multipliers on the music-driven shape and light, set
       // from the ?dev panel (1 = as designed)
-      this.tw = { waves: 1, thick: 0.8, spread: 1.4, speed: 1, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: 0.6, coreBright: 1.35, coreSize: 2.55 };
+      this.tw = { waves: 1, thick: 1.45, spread: 1, speed: 1, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55 };
       if (q.has('dev')) this._devPanel();
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
