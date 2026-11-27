@@ -353,7 +353,7 @@ void main(){
     v_a *= 1. - texelFetch(u_side, ij, 0).x;
     // small groups that stray well clear of the ribbon fade away rather than
     // leaving short comb-like trails out in the dark
-    v_a *= 1. - smoothstep(1.3, 1.9, abs(gd));
+    v_a *= 1. - smoothstep(1.15, 1.6, abs(gd));
     expr = exp(-gd * gd * 1.6) * (.6 + 1.4 * (1. - gPinch(rg.x)));
   }
   // TENDER: only some particles are drawn, so the filaments are sparse
@@ -807,7 +807,7 @@ void main(){
       });
       // TWEAKS: overall multipliers on the music-driven shape and light, set
       // from the ?dev panel (1 = as designed)
-      this.tw = { waves: 1, thick: 0.3, spread: 1.1, speed: 1.15, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.75, sideThin: 0.45, sideMusic: 1.4, sideShare: 0, sideGap: 0.3 };  // (side waves off by default)
+      this.tw = { waves: 1, thick: 0.3, spread: 1.1, speed: 1.15, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.75, sideThin: 0.45, sideMusic: 1.4, sideShare: 0, sideGap: 0.3, dust: 0.2 };  // (side waves off by default)
       if (q.has('dev')) this._devPanel();
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
@@ -1293,7 +1293,7 @@ void main(){
       // MID + TEMPO + MOOD: the filaments' expressive movement (not volume);
       // it softens and slows in quiet passages
       gl.uniform1f(P.u.u_flow, (0.03 + 0.11 * mid) * tempo * M.speed * (1 + 0.5 * M.instab * acc) * (1 - 0.65 * quiet) * this.tw.speed);
-      gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust); // HIGH + SILENCE: strands fray into dust
+      gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust * this.tw.dust); // HIGH + SILENCE: strands fray into dust
       gl.uniform1f(P.u.u_turb, (M.turb * (0.5 + 0.5 * mid) + 0.45 * tension) * (this.guides ? GUIDE.turb : 1)); // MOOD + TENSION: turbulence
       const FU = { // the field's shape, shared with the silk tangent pass
         u_time: this.evolveT ?? this.t, u_freq: (1.0 + 0.3 * mid) * M.curve,
@@ -1383,7 +1383,7 @@ void main(){
         gl.uniform1i(P.u.u_tan, 1);
         gl.uniform1f(P.u.u_len, R.len);
         gl.uniform1f(P.u.u_arcFocus, R.arcFocus);
-        gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust);
+        gl.uniform1f(P.u.u_dust, (0.1 + 0.2 * high + 0.35 * quiet) * M.dust * this.tw.dust);
         gl.activeTexture(gl.TEXTURE0);
         gl.uniform2f(P.u.u_res, lOut.w, lOut.h);
         gl.uniform1f(P.u.u_lineW, SILK.lineW * this.dpr);
@@ -1569,6 +1569,7 @@ void main(){
         ['Small wiggles', 'Smaller wobble inside the waves (lower = smoother)', TW, 'wavy', 0, 2.5, 0.05],
         ['Fine roughness', 'The finest texture in the waves (lower = smoother)', G, 'fine', 0, 1, 0.05],
         ['Turbulence', 'How much particles get pushed off their lines', G, 'turb', 0, 1.5, 0.05],
+        ['Dust', 'Specks that drift off the waves (with the highs and in quiet passages)', TW, 'dust', 0, 2, 0.05],
         ['Curls', 'How often the folds swell into curls', G, 'curl', 0, 3, 0.05],
         ['Flow speed', 'How fast the light streams along the waves', TW, 'speed', 0, 3, 0.05],
         ['Tilting', 'How far the whole form turns over time', G, 'orient', 0, 2, 0.05],
