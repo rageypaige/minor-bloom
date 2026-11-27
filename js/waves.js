@@ -72,7 +72,7 @@ float gDY(float x){ return u_gA.x * u_gK.x * cos(u_gK.x * x + u_gPh.x) + u_gA.y 
 // signed distance from the guide (approximate), in the guide's frame
 float gDist(vec2 r){ float sl = gDY(r.x); return (r.y - gY(r.x)) / sqrt(1. + sl * sl); }
 // 1 = full width; smaller where the ribbon pinches and turns over
-float gPinch(float x){ return mix(1., .32 + .68 * abs(cos(u_gTw.y * x + u_gTw.z)), u_gTw.x); }`;
+float gPinch(float x){ float cs = cos(u_gTw.y * x + u_gTw.z); return mix(1., .32 + .68 * sqrt(cs * cs + .02), u_gTw.x); } // (smooth where it turns: no corners)`;
 
   const FIELD_FN = `
 // Long wave lines that run across the screen (not closed loops): the field
@@ -237,6 +237,123 @@ void main(){
   if (dot(t, t2) < 0.) t2 = -t2;
   float k = clamp((t.x * t2.y - t.y * t2.x) / h, -40., 40.); // signed curvature
   o = vec4(t, k, gm);
+}`;
+
+  // 2e. BODY AND ECHOES (experimental, ?body or B). The visible waves are
+  // contours of the field: particles gather where fract(n * levels + .5 *
+  // guide) - .5 is near zero, spread across a band u_thick wide. This pass
+  // evaluates the very same field per pixel and fills that band, so the
+  // body's silhouette is the actual wave, not an approximation of it. The
+  // same masks as the particles (the spread, the guide band) decide where it
+  // is visible. Echoes are thin contours released by musical accents: each
+  // is the same wave line offset outward by a world distance (using the
+  // field's own gradient, so it never spikes or crosses itself), on the side
+  // and the wave it was released from, tapered to a partial length.
+  const BODY_FS = `#version 300 es
+precision highp float;
+uniform float u_time, u_freq, u_warp, u_bassAmp, u_bassPhase, u_deep, u_deepPh, u_ang;
+uniform vec2 u_center, u_seedOff;
+uniform vec2 u_res; uniform float u_asp, u_levels, u_thick, u_spread, u_t, u_irid, u_vis, u_bodyOn;
+uniform vec3 u_colA, u_colB, u_colAcc;
+uniform vec4 u_body;      // brightness, edge softness, edge line, bend highlight
+uniform vec4 u_echo[4];   // x, y, age (s), strength (0 = empty slot)
+uniform vec4 u_echoB[4];  // side (+1 / -1), reach, extent (world units), life (s)
+uniform vec4 u_echoP;     // line width (body pixels), brightness, appear (s), travel time constant (s)
+uniform sampler2D u_echoK; // per slot: the wave it was released from
+out vec4 o;
+${NOISE}
+${GUIDE_FN}
+${FIELD_FN}
+vec3 hueRot(vec3 c, float a){
+  vec3 y = mat3(.299, .596, .211, .587, -.274, -.523, .114, -.322, .312) * c;
+  float cs = cos(a), sn = sin(a);
+  y.yz = vec2(y.y * cs - y.z * sn, y.y * sn + y.z * cs);
+  return max(mat3(1., 1., 1., .956, -.272, -1.106, .621, -.647, 1.703) * y, 0.);
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy / u_res;
+  vec2 p = vec2((uv.x - .5) * u_asp, uv.y - .5);
+  float n = field(p, u_ang, u_seedOff);
+  // |grad n| per world unit, from screen derivatives (uniform control flow)
+  float gm = length(vec2(dFdx(n), dFdy(n))) * u_res.y;
+  // the particles settle where fract(n * levels + .5 * guide) = .5, so the
+  // wave lines sit at whole numbers of m
+  float m = n * u_levels + .5 * u_guide - .5;
+  float k = floor(m + .5), c = m - k;          // nearest wave line, and offset from it (levels)
+  float hw = .5 * u_thick;                     // the particle band's half width (levels)
+  float u = c / hw;                            // -1..1 across the body
+  float aa = min(fwidth(u) * 1.2, .5);
+  // where the particles live: the same masks
+  vec2 cc = p - u_center;
+  vec2 cn = abs(cc / vec2(u_spread * u_asp * .6, u_spread * .6));
+  float vis = 1. - smoothstep(.7, 1.1, pow(pow(cn.x, 4.) + pow(cn.y, 4.), .25));
+  float visE = vis;
+  float expr = 0.;
+  if (u_guide > .5) {
+    float ca = cos(u_ang), sa = sin(u_ang);
+    vec2 rg = mat2(ca, sa, -sa, ca) * cc;
+    float gd = gDist(rg) / (u_gBand * .8);
+    vis *= (.45 + .55 * exp(-gd * gd)) * (1. - smoothstep(1.05, 1.7, abs(gd)));
+    vec2 cg = abs(rg / vec2(u_spread * u_gLen * .6, u_spread * .6 + u_gBand));
+    float r2 = pow(pow(cg.x, 4.) + pow(cg.y, 4.), .25);
+    vis *= 1. - smoothstep(.85, 1.05, r2);
+    visE *= 1. - smoothstep(.85, 1.1, r2);
+    expr = 1. - gPinch(rg.x);
+  }
+  vis *= u_vis; visE *= u_vis;
+  vec3 L = vec3(0.);
+  if (u_bodyOn > .5 && vis > .001) {
+    float soft = u_body.y;
+    float a = 1. - smoothstep(1. - soft - aa, 1. + aa, abs(u));
+    // a cohesive interior, a little brighter toward one edge
+    float shade = (.55 + .45 * (1. - u * u)) * (1. + .22 * u);
+    // a readable edge line just inside the silhouette
+    float rim = u_body.z * exp(-pow((abs(u) - (.92 - soft * .5)) / max(.06, soft * .6), 2.));
+    // highlights where the wave lines crowd together (bends, pinches, folds)
+    float bend = smoothstep(1.15, 2.2, gm / max(u_freq * .9, 1e-3));
+    float hi = u_body.w * max(bend, .8 * expr);
+    // gentle, coherent variation inside the body: soft bands of light and a
+    // drift between the two colours (slow, low-frequency, never grainy)
+    float iv = fbm(p * 2.3 + vec2(u_t * .02, -u_t * .015));
+    shade *= .72 + .56 * iv;
+    vec3 col = mix(u_colA, u_colB, clamp(.5 + .4 * u + .6 * (iv - .47), 0., 1.));
+    if (u_irid > 0.) col = hueRot(col, u_irid * sin(dot(p, vec2(3.1, 2.3)) + u_t * .07));
+    col = mix(col, u_colAcc, .35 * clamp(hi, 0., 1.));
+    L += col * (a * shade * (1. + hi) + rim * a) * u_body.x * vis;
+  }
+  // ECHOES: thin contours travelling out from the body's edge
+  float px = 1. / u_res.y;
+  float dist = (abs(c) - hw) / max(u_levels * gm, 1e-3);   // world distance beyond the edge
+  for (int i = 0; i < 4; i++) {
+    vec4 E = u_echo[i];
+    if (E.w <= 0. || E.z < 0.) continue;
+    vec4 B = u_echoB[i];
+    if (abs(k - texelFetch(u_echoK, ivec2(i, 0), 0).x) > .5) continue;  // only its own wave
+    if (c * B.x <= 0.) continue;                                     // only the side it left from
+    float R = .012 + B.y * (1. - exp(-E.z / u_echoP.w));
+    float line = exp(-pow((dist - R) / (u_echoP.x * px), 2.));
+    float fade = smoothstep(0., u_echoP.z, E.z) * (1. - smoothstep(B.w * .35, B.w, E.z));
+    float ext = B.z * (1. + 1.2 * R / max(B.y, 1e-3));
+    float taper = 1. - smoothstep(ext * .3, ext, length(p - E.xy));
+    L += mix(u_colB, u_colAcc, .4) * line * fade * taper * u_echoP.y * (.35 + .65 * E.w) * visE;
+  }
+  o = vec4(L, 1.);
+}`;
+
+  // 2f. ECHO PROBE: which wave (and how far from it) a released echo starts
+  // on, measured once at the moment of the accent, one pixel per slot.
+  const PROBE_FS = `#version 300 es
+precision highp float;
+uniform float u_time, u_freq, u_warp, u_bassAmp, u_bassPhase, u_deep, u_deepPh, u_ang;
+uniform vec2 u_center, u_seedOff, u_p; uniform float u_levels;
+out vec4 o;
+${NOISE}
+${GUIDE_FN}
+${FIELD_FN}
+void main(){
+  float m = field(u_p, u_ang, u_seedOff) * u_levels + .5 * u_guide - .5;
+  float k = floor(m + .5);
+  o = vec4(k, m - k, 0., 1.);
 }`;
 
   // 2a. Fade the trails a little each frame.
@@ -509,6 +626,7 @@ uniform sampler2D u_light, u_glow, u_veil, u_arcs; uniform vec2 u_res, u_gpx, u_
 // which layers are shown (trails, arcs, veil, glow); for isolating them
 uniform vec4 u_show;
 uniform float u_compress; // SHEER: highlight compression (0 = off)
+uniform sampler2D u_body; uniform float u_bodyAmt, u_showBody; // BODY: the wave body and its echoes
 uniform float u_sat;      // colour saturation (1 = as before)
 uniform float u_yshift;   // steer yellow/olive hues toward amber/peach (0 = off)
 // GALLERY treatment (each 0 = off, grain 1 = as before)
@@ -536,6 +654,7 @@ void main(){
   G += texture(u_glow, uv).rgb * 2.;
   L += G / 14. * u_glowAmt * u_show.w;                  // LAYER 4, glow
   if (u_arcOn > 0.) L += texture(u_arcs, uv).rgb * u_show.y; // LAYER 2, SILK: this frame's arcs
+  if (u_bodyAmt > 0.) L += texture(u_body, uv).rgb * u_bodyAmt * u_showBody; // LAYER 5, BODY + echoes
   // SILK: ATMOSPHERIC VEIL. A wide, faint translucent haze of coloured light
   // made from the filaments themselves (no fog of its own): it gathers
   // where they are dense and falls away fast where they aren't, so the
@@ -728,6 +847,33 @@ void main(){
     return [f(0), f(8), f(4)];
   }
 
+  // BODY (experimental): a continuous wave body filling the actual wave
+  // contours. B toggles it (with the echoes) without resetting anything;
+  // ?body starts with it on.
+  const BODY = {
+    scale: 0.5,       // resolution of the body pass (fraction of the screen)
+    bright: 1.7,      // light of the body
+    soft: 0.16,       // edge softness (0 = crisp)
+    rim: 0.45,        // a readable edge line just inside the silhouette
+    highlight: 0.6,   // extra light where wave lines crowd together (bends, folds)
+    particles: 0.3,   // in body mode, the particle trails count this much (surface detail)
+    silk: 0.35,       //   the silk strokes this much
+    veil: 0.3,        //   and the atmospheric veil this much
+  };
+  // ECHOES (experimental): thin contours released by musical accents
+  const ECHO = {
+    slots: 4,         // at most this many at once
+    life: 2.4,        // seconds (stronger accents live a little longer)
+    reach: 0.09,      // how far a strong accent's echo travels (screen heights)
+    extent: 0.3,      // length of the released stretch of edge (screen heights)
+    lineW: 1.1,       // line width, in body-pass pixels
+    bright: 1.1,      // light of an echo (well below the body)
+    appear: 0.08,     // seconds to appear
+    travel: 0.6,      // seconds: how quickly it travels out (then it slows)
+    cooldown: 0.3,    // minimum seconds between echoes (more for sparse rhythm)
+    second: 0.6,      // accents stronger than this release a second, trailing echo
+  };
+
   // SILK material tuning (rendering only)
   const SILK = {
     lineW: 0.32,  // half-width of a filament line, in CSS pixels (x tier size)
@@ -781,7 +927,7 @@ void main(){
                        arcFocus: 0, toe: 0, localContrast: 0, halation: 0, splitTone: 0, colourDrift: 0, grain: 1, palette: 'original' };
   for (const k in RENDER_PRESETS) RENDER_PRESETS[k] = { ...RIBBON_OFF, ...RENDER_PRESETS[k] };
   const DEFAULT_PRESET = 'ink';
-  const LAYERS = ['all', 'trails', 'arcs', 'veil', 'glow'];
+  const LAYERS = ['all', 'trails', 'arcs', 'veil', 'glow', 'body'];
 
   class Waves {
     constructor(canvas, opts = {}) {
@@ -802,6 +948,16 @@ void main(){
         }
       });
       if (q.has('dev')) this._devPanel();
+      // BODY + ECHOES experiment: B toggles it on the very same simulation
+      this.bodyOn = q.has('body');
+      this.echoes = [];
+      window.addEventListener('keydown', (e) => {
+        if ((e.key === 'b' || e.key === 'B') && !(e.target instanceof HTMLInputElement)) {
+          this.bodyOn = !this.bodyOn;
+          if (!this.bodyOn) this.echoes = [];
+          this._flag(this.bodyOn ? 'wave body + echoes' : 'particles only');
+        }
+      });
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
       if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('Float render targets are not available');
@@ -811,6 +967,10 @@ void main(){
       const seg = (src) => src.replace('precision highp float;', '#define SEG\nprecision highp float;');
       this.pSeg = this._prog(seg(PTS_VS), seg(PTS_FS));
       this.pTan = this._prog(QUAD_VS, TAN);
+      this.pBody = this._prog(QUAD_VS, BODY_FS);
+      this.pProbe = this._prog(QUAD_VS, PROBE_FS);
+      // per echo slot: the wave it was released from (RGBA32F, 4 x 1)
+      this.echoK = this._tex(ECHO.slots, 1, 'state', new Float32Array(ECHO.slots * 4));
       this.pOut = this._prog(QUAD_VS, OUT);
       this.pGlow = this._prog(QUAD_VS, GLOW);
       this.pStar = this._prog(STAR_VS, STAR_FS);
@@ -883,7 +1043,12 @@ void main(){
       this.c.height = Math.round(h * dpr);
       this.dpr = dpr;
       this.asp = w / h;
+      // release the previous targets before making new ones
+      for (const T of [...(this.light || []), this.glow, this.arcs, this.veil, this.body]) {
+        if (T) { gl.deleteTexture(T.tex); gl.deleteFramebuffer(T.fb); }
+      }
       this.light = [this._tex(this.c.width, this.c.height, 'light'), this._tex(this.c.width, this.c.height, 'light')];
+      this.body = this._tex(Math.max(16, Math.round(this.c.width * BODY.scale)), Math.max(16, Math.round(this.c.height * BODY.scale)), 'light');
       this.glow = this._tex(Math.max(16, Math.round(this.c.width / 4)), Math.max(16, Math.round(this.c.height / 4)), 'light');
       // silk arcs are drawn fresh each frame into their own buffer (no trails),
       // so they show only the ribbon's present shape and never pile up
@@ -898,6 +1063,7 @@ void main(){
 
     // Particles start scattered loosely around the middle.
     reset() {
+      this.echoes = []; // (echo history belongs to the song)
       // a new song starts a new fingerprint
       this.songD = null;
       this.dims = null;
@@ -1150,6 +1316,36 @@ void main(){
         }
       }
       this.ripCool = (this.ripCool || 0) - dt;
+      // ECHOES: an accepted accent releases a thin contour from a stretch of
+      // the wave's edge. Judged like the ripples (against this song's own
+      // typical accents, scaled by rhythmic activity), with their own
+      // cooldown; never in silence, never more than ECHO.slots at once.
+      this.echoes = (this.echoes || []).filter((e) => (e.t += dt) < e.life);
+      this.echoCool = (this.echoCool || 0) - dt;
+      if (this.bodyOn && f.beat && on && !this.idle && (this.quietAmt || 0) < 0.5 && this.echoCool <= 0) {
+        const bs = f.beatStrength || 0.3;
+        const rel = clamp(bs / Math.max(0.15, (this.beatAvg ?? bs) * 1.6));
+        const R = this.dims ? this.dims.rhythm : 0.3;
+        if (rel > 0.8 - 0.45 * R) {
+          const strength = clamp(rel * (0.3 + 0.7 * R) + 0.15);
+          const sp = (this.spreadNow || 0.8) * 0.45;
+          let x, y;
+          if (this.guides && this.g) {
+            const rx = rnd(-sp, sp) * this.asp, ry = this._gY(rx), ca = Math.cos(this.ang), sa = Math.sin(this.ang);
+            x = this.focus.x + ca * rx + sa * ry; y = this.focus.y - sa * rx + ca * ry;
+          } else { x = this.focus.x + rnd(-sp, sp) * this.asp; y = this.focus.y + rnd(-sp, sp) * 0.6; }
+          const side = Math.random() < 0.5 ? -1 : 1;
+          const add = (delay, k) => {
+            const used = new Set(this.echoes.map((e) => e.slot));
+            const slot = [...Array(ECHO.slots).keys()].find((i) => !used.has(i));
+            if (slot === undefined) return;
+            this.echoes.push({ slot, x, y, side, t: -delay, s: strength * k, life: ECHO.life * (0.7 + 0.5 * strength), probe: true });
+          };
+          add(0, 1);
+          if (strength > ECHO.second) add(0.16, 0.7);
+          this.echoCool = ECHO.cooldown + 1.2 * (1 - R) * (1 - R);
+        }
+      }
       // fullness, as far as the visuals are concerned, needs some drive (drums)
       const hiN = clamp((Math.log10(((f.dbg && f.dbg.hi) || 0) + 1e-9) + 5) / 2.7);
       this.drive = (this.drive ?? 0.5) + (hiN - (this.drive ?? 0.5)) * ease(dt, 3);
@@ -1397,7 +1593,7 @@ void main(){
       if (isSeg) {
         // lines deposit light once per pass, not once per frame
         // (no trails here, so each arc carries what a trail would have built up)
-        gl.uniform1f(P.u.u_bright, R.silkBright * per * baseTau * 60 * M.light / Math.sqrt(Math.max(0.3, M.visible)));
+        gl.uniform1f(P.u.u_bright, R.silkBright * (this.bodyOn ? BODY.silk : 1) * per * baseTau * 60 * M.light / Math.sqrt(Math.max(0.3, M.visible)));
         const stride = Math.max(1, Math.round(R.stride));
         gl.uniform1i(P.u.u_stride, stride);
         if (R.silkBright > 0) gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 18, Math.floor(this.PW * this.PH / stride));
@@ -1430,6 +1626,60 @@ void main(){
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       }
 
+      // 2e. BODY + ECHOES
+      if (this.bodyOn) {
+        const fieldU = (P) => {
+          for (const k in FU) if (P.u[k]) gl.uniform1f(P.u[k], FU[k]);
+          gl.uniform2f(P.u.u_center, this.focus.x, this.focus.y);
+          gl.uniform2f(P.u.u_seedOff, (this.seedOff || [0, 0])[0], (this.seedOff || [0, 0])[1]);
+          gl.uniform1f(P.u.u_levels, (1.4 + 0.8 * lush + 0.5 * vol) * M.density);
+          this._setGuide(P);
+        };
+        // the wave each new echo starts on, measured now (one pixel per slot)
+        const fresh = this.echoes.filter((e) => e.probe);
+        if (fresh.length) {
+          P = this.pProbe;
+          gl.useProgram(P.p);
+          fieldU(P);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, this.echoK.fb);
+          for (const e of fresh) {
+            gl.viewport(e.slot, 0, 1, 1);
+            gl.uniform2f(P.u.u_p, e.x, e.y);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            e.probe = false;
+          }
+        }
+        P = this.pBody;
+        gl.useProgram(P.p);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.body.fb);
+        gl.viewport(0, 0, this.body.w, this.body.h);
+        fieldU(P);
+        gl.uniform2f(P.u.u_res, this.body.w, this.body.h);
+        gl.uniform1f(P.u.u_asp, this.asp);
+        gl.uniform1f(P.u.u_thick, clamp((0.08 + 0.34 * vol) * M.thick, 0.03, 0.42));
+        gl.uniform1f(P.u.u_spread, this.spreadNow);
+        gl.uniform1f(P.u.u_t, this.t);
+        gl.uniform1f(P.u.u_irid, this.guides ? GUIDE.irid : 0);
+        gl.uniform1f(P.u.u_vis, (this.idle ? 0.6 : 0.55 + 0.45 * (this.lumin ?? 0.3)) * (1 - 0.7 * quiet));
+        gl.uniform1f(P.u.u_bodyOn, 1);
+        gl.uniform3fv(P.u.u_colA, this.colA);
+        gl.uniform3fv(P.u.u_colB, this.colB);
+        gl.uniform3fv(P.u.u_colAcc, this.colAcc || this.colB);
+        gl.uniform4f(P.u.u_body, BODY.bright, BODY.soft, BODY.rim, BODY.highlight);
+        const E1 = new Float32Array(16), E2 = new Float32Array(16);
+        for (const e of this.echoes) {
+          E1.set([e.x, e.y, e.t, e.s], e.slot * 4);
+          E2.set([e.side, ECHO.reach * (0.45 + 0.55 * e.s), ECHO.extent * (0.6 + 0.4 * e.s), e.life], e.slot * 4);
+        }
+        gl.uniform4fv(P.u.u_echo, E1);
+        gl.uniform4fv(P.u.u_echoB, E2);
+        gl.uniform4f(P.u.u_echoP, ECHO.lineW, ECHO.bright, ECHO.appear, ECHO.travel);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.echoK.tex);
+        gl.uniform1i(P.u.u_echoK, 0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+
       // 3. output
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, this.c.width, this.c.height);
@@ -1450,8 +1700,12 @@ void main(){
       gl.activeTexture(gl.TEXTURE3);
       gl.bindTexture(gl.TEXTURE_2D, this.arcs.tex);
       gl.uniform1i(P.u.u_arcs, 3);
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, this.body.tex);
+      gl.uniform1i(P.u.u_body, 4);
+      gl.uniform1f(P.u.u_bodyAmt, this.bodyOn ? 1 : 0);
       gl.uniform2f(P.u.u_vpx, 1 / this.veil.w, 1 / this.veil.h);
-      gl.uniform1f(P.u.u_veilAmt, this.silk ? R.veil * (0.7 + 0.6 * (this.lumin ?? 0.2)) : 0);
+      gl.uniform1f(P.u.u_veilAmt, this.silk ? R.veil * (this.bodyOn ? BODY.veil : 1) * (0.7 + 0.6 * (this.lumin ?? 0.2)) : 0);
       gl.activeTexture(gl.TEXTURE0);
       gl.uniform2f(P.u.u_res, this.c.width, this.c.height);
       gl.uniform2f(P.u.u_gpx, 1 / this.glow.w, 1 / this.glow.h);
@@ -1459,7 +1713,7 @@ void main(){
       const lum2 = this.lumin ?? 0.2;
       gl.uniform1f(P.u.u_lumin, lum2);
       gl.uniform1f(P.u.u_glowAmt, (0.15 + 0.55 * lum2) * R.glow);
-      gl.uniform1f(P.u.u_trailAmt, R.trailOpacity);
+      gl.uniform1f(P.u.u_trailAmt, R.trailOpacity * (this.bodyOn ? BODY.particles : 1));
       gl.uniform1f(P.u.u_compress, R.compress);
       gl.uniform1f(P.u.u_sat, R.saturation);
       gl.uniform1f(P.u.u_yshift, R.yellowShift);
@@ -1471,6 +1725,7 @@ void main(){
       gl.uniform1f(P.u.u_grain, R.grain);
       gl.uniform1f(P.u.u_arcOn, this.silk && R.silkBright > 0 ? 1 : 0);
       const ly = LAYERS[this.layer];
+      gl.uniform1f(P.u.u_showBody, ly === 'all' || ly === 'body' ? 1 : 0);
       gl.uniform4f(P.u.u_show, ly === 'all' || ly === 'trails' ? 1 : 0, ly === 'all' || ly === 'arcs' ? 1 : 0,
         ly === 'all' || ly === 'veil' ? 1 : 0, ly === 'all' || ly === 'glow' ? 1 : 0);
       // quiet passages sit lower; intense ones open up
