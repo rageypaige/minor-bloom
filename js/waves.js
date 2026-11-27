@@ -114,6 +114,8 @@ uniform float u_freq, u_warp, u_levels, u_pull, u_flow, u_dust, u_spread, u_bass
 uniform vec2 u_center, u_seedOff; uniform float u_ang, u_thick, u_cross, u_crossAng, u_turb, u_strands, u_deep, u_deepPh, u_loosen;
 uniform float u_spine, u_spinePos; // CORE STRAND: share of particles in it, and where across the wave
 uniform float u_sideThin;          // SIDE WAVES: their thickness relative to the main wave
+uniform float u_sideShare;         // SIDE WAVES: share of particles that live on them
+uniform float u_sideGap;           // SIDE WAVES: how far out they run (fraction of the spacing between wave lines)
 uniform vec4 u_rip[4];
 layout(location = 0) out vec4 o;
 layout(location = 1) out vec4 o2; // per particle: how much it belongs to a side wave
@@ -129,6 +131,10 @@ void main(){
   bool crossing = h1(seed * 5.9) < u_cross;
   float ang = crossing ? u_ang + u_crossAng : u_ang;
   vec2 off = u_seedOff + (crossing ? vec2(17.3, -4.1) : vec2(0.));
+  // SIDE WAVES have their own particles: born on the neighbouring wave
+  // lines and streaming along them, so they are evenly filled like the main
+  // wave (not just strays knocked out of it)
+  bool sidePop = u_guide > .5 && h1(seed * 23.1) < u_sideShare;
   float n = field(p, ang, off);
   vec2 g = vec2(field(p + vec2(e, 0.), ang, off) - n, field(p + vec2(0., e), ang, off) - n) / e;
   float g2 = dot(g, g) + 1e-3;
@@ -157,7 +163,16 @@ void main(){
     float myLine = floor(n * u_levels + lane * u_thick + .5 * u_guide - .5 + .5);
     sideK = smoothstep(.55, 1., abs(myLine - guideLevel));
   }
-  float d = fract(n * u_levels + lane * u_thick * mix(1., u_sideThin, sideK) + .5 * u_guide) - .5;
+  // a side-wave particle follows a line parallel to the main wave, a
+  // fraction of the way to the next wave line (one or two steps out, on a
+  // side fixed per particle): close, clean, and the same shape
+  float sideOff = 0.;
+  if (sidePop) {
+    float sgn = h1(seed * 29.3) < .5 ? -1. : 1., order = h1(seed * 31.7) < .75 ? 1. : 2.;
+    sideOff = sgn * order * u_sideGap;
+    sideK = 1.;
+  }
+  float d = fract(n * u_levels + lane * u_thick * mix(1., u_sideThin, sideK) + sideOff + .5 * u_guide) - .5;
   vec2 toLine = (-d / u_levels) * g / g2;
   // ...and streaming along it
   // half the particles flow each way along the waves, so the light builds
@@ -165,6 +180,7 @@ void main(){
   vec2 along = vec2(-g.y, g.x) / sqrt(g2) * (h1(seed * 11.3) < .5 ? -1. : 1.);
   // some particles (more with the highs) drift off the lines as dust
   float dusty = step(1. - u_dust, h1(seed * 7.7));
+  if (sidePop) dusty = 0.; // side waves stay clean lines (no drifting dust)
   // background particles (see the point shader) drift more slowly: parallax
   float layerSpeed = h1(seed * 6.1) < .45 ? .6 : 1.;
   // QUIET / SILENCE: the lines loosen their hold, so strands slowly dissolve
@@ -186,7 +202,7 @@ void main(){
   }
   // GUIDANCE: free inside the band around the guide; outside it, a soft
   // force draws particles back toward the composition
-  if (u_guide > .5) {
+  if (u_guide > .5 && !sidePop) {
     float ca = cos(u_ang), sa = sin(u_ang);
     mat2 Rm = mat2(ca, sa, -sa, ca);
     vec2 rg = Rm * (p - u_center);
@@ -218,6 +234,13 @@ void main(){
       float ca = cos(u_ang), sa = sin(u_ang);
       float rx = j.x * u_spread * u_gLen * .6;
       vec2 rg = vec2(rx, gY(rx) + j.y * u_gBand * .8);
+      if (sidePop) {
+        // reborn near its line: the spacing between wave lines here,
+        // measured across the guide, times its offset
+        float D = gPinch(rx) / max(u_levels * u_freq * .9, .2);
+        vec2 nR = normalize(vec2(-gDY(rx), 1.));
+        rg = vec2(rx, gY(rx)) + nR * (-sideOff * D + j.y * u_gBand * .1);
+      }
       p = u_center + transpose(mat2(ca, sa, -sa, ca)) * rg;
     }
     age = 0.;
@@ -276,6 +299,7 @@ uniform float u_mat, u_strands, u_cross, u_time;
 uniform float u_spine, u_coreBright, u_coreSize; // CORE STRAND
 uniform float u_sideVis; // SIDE WAVES: how much they show
 uniform sampler2D u_side;  // per particle: how much it belongs to a side wave (from the simulation)
+uniform float u_sideShare; // SIDE WAVES: share of particles that live on them
 // RIBBON PROFILE (rendering only): (amount, asymmetry, width variation,
 // edge softness), (density falloff, density variation, dissolve, twist)
 uniform vec4 u_rib1, u_rib2; uniform float u_ribGain;
@@ -310,78 +334,26 @@ void main(){
   v_s = s.w;
   v_pos = s.xy;
   float expr = 1.; // how expressive this spot is (the guide's core and folds)
-  if (u_guide > .5) {
+  if (u_guide > .5 && h1(s.w * 23.1) < u_sideShare) {
+    // a side-wave particle: its own amount of light, thin and quiet
+    // (no fading with distance from the main gesture: it lives away from it)
+    v_a *= u_sideVis * .6;
+#ifdef SEG
+    v_a *= .15; // (silk streaks on side waves read as stray dashes: keep them faint)
+#endif
+  } else if (u_guide > .5) {
     // the core of the gesture is brightest; filaments that wander out from
     // it are fainter; where the ribbon pinches and folds it catches light
     float ca = cos(u_ang), sa = sin(u_ang);
     vec2 rg = mat2(ca, sa, -sa, ca) * (s.xy - u_center);
     float gd = gDist(rg) / (u_gBand * .8);
     v_a *= (.3 + .7 * exp(-gd * gd)) * (1. + .7 * (1. - gPinch(rg.x)));
-    // the side waves show more in full, lush passages, less in sparse ones
-    v_a *= mix(1., u_sideVis, texelFetch(u_side, ij, 0).x);
+    // stray main-wave particles that drift onto other wave lines are hidden
+    // (they made the side waves look scrappy); the side waves have their own
+    v_a *= 1. - texelFetch(u_side, ij, 0).x;
     // small groups that stray well clear of the ribbon fade away rather than
     // leaving short comb-like trails out in the dark
     v_a *= 1. - smoothstep(1.3, 1.9, abs(gd));
-
-    // ASYMMETRIC RIBBON PROFILE. Instead of a round, evenly lit tube, the
-    // light across the ribbon follows a profile that varies smoothly along
-    // its length: a concentrated luminous edge on one side falling away
-    // nonlinearly into darkness on the other, a width that swells into
-    // broad sheets and narrows into fine ribbons, the bright edge migrating
-    // across as if the ribbon were twisting in space, soft bands of density
-    // and stretches that dissolve. Particles are not moved: only how much
-    // light each one gives depends on where it sits across the ribbon.
-    if (u_rib1.x > 0.) {
-      float X = rg.x, T = u_time;
-      float asym = u_rib1.y, wv = u_rib1.z, soft = max(.03, u_rib1.w);
-      float fall = u_rib2.x, dv = u_rib2.y, diss = u_rib2.z, tw = u_rib2.w;
-      // twist: the ribbon's angle to the viewer drifts along its length and in time
-      float th = X * 1.4 * tw + T * .11 * tw + 1.8 * sin(X * .6 + T * .03);
-      float face = cos(th);
-      // width along the length (a fraction of the band), times how much of
-      // the ribbon faces the viewer: edge-on it narrows to a fine line
-      float width = mix(1., mix(.35, 1.2, lf(X, T, 1.)), wv) * mix(1., .55 + .45 * abs(face), tw > 0. ? 1. : 0.);
-      float u = gd / max(width, .05);                 // -1..1 across the visible ribbon
-      // the luminous edge sits on the side the ribbon faces. Rather than
-      // flipping sides where the ribbon turns edge-on (which left a seam),
-      // both orientations are computed and blended gradually over a long
-      // stretch, so the edge migrates smoothly across.
-      float wPos = smoothstep(-.7, .7, face);
-      float asymShape = 0.;
-      for (int k = 0; k < 2; k++) {
-        float sg = k == 0 ? 1. : -1.;
-        float wk = k == 0 ? wPos : 1. - wPos;
-        if (wk < .001) continue;
-        float e = sg * (.9 - .3 * (1. - abs(face)) * (tw > 0. ? 1. : 0.));
-        float d = (e - u) * sg;                         // 0 at the edge, growing inward
-        float beyond = exp(-pow(max(-d, 0.) / soft, 2.));                 // crisp outside the edge
-        float inner = exp(-pow(max(d, 0.) / 1.5, fall) * 1.4);           // nonlinear falloff to darkness
-        float edgeGlow = exp(-pow(d / (soft * .6), 2.));                   // concentrated bright edge
-        // SHEER FABRIC. The interior turns more transparent while the edge
-        // stays defined; darker translucent channels run through the lit
-        // material; and a second, fainter sheet overlaps inside the first,
-        // its own soft edge offset from the main one. All slow and coherent.
-        float interior = smoothstep(.05, .55, d);       // 0 at the edge, 1 inside
-        float chPh = u * 3.14159 * u_rib3.y + .9 * sin(X * .8 + T * .04) + 6.28 * lf(X * .6, T * .5, 21.);
-        float channel = 1. - u_rib3.x * smoothstep(.45, .95, .5 + .5 * sin(chPh)) * interior;
-        inner *= (1. - .6 * u_rib3.w * interior) * channel;
-        float e2 = e - sg * (.5 + .4 * lf(X * 1.1, T * .7, 31.));   // the overlapping layer's edge
-        float d2 = (e2 - u) * sg;
-        float layer2 = (d2 < 0. ? exp(-pow(-d2 / (soft * 1.6), 2.)) : exp(-pow(d2 / 1.1, fall) * 1.6)) * (1. - .5 * u_rib3.w)
-                     + .35 * exp(-pow(d2 / (soft * .9), 2.));
-        layer2 *= .55 * u_rib3.z * smoothstep(-.1, .2, d) * channel * (.4 + .6 * lf(X * .9 + 2., T * .6, 41.));
-        asymShape += wk * ((d < 0. ? beyond : inner) + .9 * edgeGlow + layer2);
-      }
-      float symShape = exp(-u * u * 1.2);
-      float shape = mix(symShape, asymShape, asym) * (1. - smoothstep(1.05, 1.6, abs(u)));
-      // narrower stretches shine only slightly more (strong boosts made knots)
-      shape *= inversesqrt(max(width, .6)) * .85;
-      // smooth bands of density across the width
-      shape *= mix(1., .3 + 1.1 * lf(X * 1.2 + u * 1.9, T * .8, 9.), dv);
-      // some stretches dissolve into darkness, others stay clearly defined
-      if (diss > 0.) shape *= mix(.25, 1., smoothstep(diss - .3, diss + .3, lf(X * .85, T * .6, 13.)));
-      v_a *= mix(1., shape * u_ribGain, u_rib1.x);  // (gain restores the light the profile takes away)
-    }
     expr = exp(-gd * gd * 1.6) * (.6 + 1.4 * (1. - gPinch(rg.x)));
   }
   // TENDER: only some particles are drawn, so the filaments are sparse
@@ -835,7 +807,7 @@ void main(){
       });
       // TWEAKS: overall multipliers on the music-driven shape and light, set
       // from the ?dev panel (1 = as designed)
-      this.tw = { waves: 1, thick: 1.45, spread: 1, speed: 1, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.6, sideThin: 0.45, sideMusic: 0.8 };
+      this.tw = { waves: 1, thick: 1.45, spread: 1, speed: 1, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.6, sideThin: 0.45, sideMusic: 0.8, sideShare: 0.2, sideGap: 0.3 };
       if (q.has('dev')) this._devPanel();
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
@@ -1339,6 +1311,8 @@ void main(){
       gl.uniform1f(P.u.u_spine, this.tw.spine);
       gl.uniform1f(P.u.u_spinePos, this.tw.spinePos);
       gl.uniform1f(P.u.u_sideThin, this.tw.sideThin);
+      gl.uniform1f(P.u.u_sideGap, this.tw.sideGap);
+      gl.uniform1f(P.u.u_sideShare, this.guides ? this.tw.sideShare : 0);
       // (guided: no independent crossing currents)
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension)); // MOOD + TENSION: intersecting currents
       gl.uniform1f(P.u.u_crossAng, 1.05 + 0.4 * Math.sin(this.t * 0.02));
@@ -1432,6 +1406,7 @@ void main(){
       gl.uniform1f(P.u.u_coreSize, this.tw.coreSize);
       // SIDE WAVES: base amount, raised by fullness and energy (upbeat, lush)
       const fullE = clamp(0.6 * lush + 0.4 * (this.dims ? this.dims.energy : 0.4));
+      gl.uniform1f(P.u.u_sideShare, this.guides ? this.tw.sideShare : 0);
       gl.uniform1f(P.u.u_sideVis, this.tw.side * (1 + this.tw.sideMusic * (1.6 * fullE - 0.6)));
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension));
       gl.uniform1f(P.u.u_size, 2.4 * this.dpr * this.tw.fineness);  // thicker lines
@@ -1606,7 +1581,9 @@ void main(){
         ['Core width', 'How thick the grounding strand is', TW, 'coreSize', 0.5, 3, 0.05],
         ['Core position', 'Where it runs across the wave (0 = middle, -0.5 / 0.5 = an edge)', TW, 'spinePos', -0.6, 0.6, 0.02],
         ['Side waves'],
-        ['Side waves', 'How much the smaller waves around the main one show', TW, 'side', 0, 1.5, 0.05],
+        ['Side waves', 'How much the smaller waves around the main one show', TW, 'side', 0, 2, 0.05],
+        ['Side wave density', 'How many particles the side waves have (0 = no side waves)', TW, 'sideShare', 0, 0.5, 0.01],
+        ['Side wave spacing', 'How far out from the main wave they run', TW, 'sideGap', 0.1, 0.5, 0.01],
         ['Side wave thickness', 'How thick they are compared with the main wave', TW, 'sideThin', 0.1, 1.2, 0.05],
         ['Side waves follow the music', 'How much fuller, more upbeat passages bring them forward', TW, 'sideMusic', 0, 1.5, 0.05],
         ['Light and texture'],
