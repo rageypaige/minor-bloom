@@ -24,6 +24,10 @@ Live at [paigelatimer.ca/minor-bloom](https://paigelatimer.ca/minor-bloom/).
 4. Optionally, type what you're listening to on the start screen. It shows
    in the corner while you listen and on the stills you save (for an audio
    file, its name is used if you leave it empty).
+   Not sure what to play? The start screen suggests one of Paige's favourite
+   songs (picked at random each visit; the list is `SUGGESTIONS` in
+   `js/app.js`). Clicking it opens the song on YouTube in a new tab and fills
+   in its name; play it there, come back and choose **listen to a tab**.
 5. **save** keeps a still of the sky as it is right now, and the music plays
    on. When the song ends (or you click **finish**, or stop sharing), you get
    the last moment to name and save.

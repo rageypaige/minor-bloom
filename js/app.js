@@ -10,6 +10,23 @@
   const canTab = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
   document.documentElement.dataset.tab = canTab ? 'yes' : 'no';
 
+  // SONGS PAIGE LOVES: one is suggested on the start screen, picked at
+  // random each visit. Clicking it opens the song on YouTube in a new tab
+  // (play it there, then choose "listen to a tab") and fills in the song
+  // name. Add more here: { title, artist, url }.
+  const SUGGESTIONS = [
+    { title: 'My Love Mine All Mine', artist: 'Mitski', url: 'https://www.youtube.com/watch?v=CwGbMYLjIpQ' },
+    { title: 'Bobby', artist: 'Phoebe Bridgers', url: 'https://www.youtube.com/watch?v=XlnQKVBQS60' },
+  ];
+  if (SUGGESTIONS.length) {
+    const pick = SUGGESTIONS[Math.floor(Math.random() * SUGGESTIONS.length)];
+    const a = $('#suggest-link');
+    a.textContent = `${pick.title} · ${pick.artist}`;
+    a.href = pick.url;
+    a.addEventListener('click', () => { if (!$('#song').value.trim()) $('#song').value = `${pick.title} · ${pick.artist}`; });
+    $('#suggest').hidden = false;
+  }
+
   let atmos = null;
   // The particle waves are the default; ?style=sky keeps the night-sky style
   // Default: the guided ribbons. ?style=waves keeps the unguided particle
