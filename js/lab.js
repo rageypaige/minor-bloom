@@ -1,101 +1,134 @@
-// BLOOM LAB: a blank canvas for new visuals. The music is already read for
-// you (see music.js: this.music.dims, .vol, .bass, .mid, .high, .beats,
-// .colA / .colB, ...); draw whatever you like in draw().
-//
-// For now it only fills the aubergine ground and breathes one faint,
-// soft glow of the current palette colour, so it's clear the music is
-// coming through. Press D to show a small readout of what it hears.
+// BLOOM LAB: translucent fields of light (prototype).
+// Ties the independent systems together:
+//   js/lab/synth.js       synthetic input (stands in for the music for now)
+//   js/lab/geometry.js    formation spines: position, width, lit edge
+//   js/lab/motion.js      how the formations drift, swell and interact
+//   js/lab/material.js    the optical material and compositing settings
+//   js/lab/compositor.js  the one GPU pass that renders it all
+// The music is still read (js/music.js), for the words in the corner and
+// for later; for now the visuals follow the synthetic input. Press A to
+// let them follow the music instead (experimental), ?dev for sliders.
 (function () {
   const MB = (window.MB = window.MB || {});
 
   class Lab {
     constructor(canvas) {
       this.c = canvas;
-      this.ctx = canvas.getContext('2d');
       this.music = new MB.Music();
-      this.dims = null;          // (read by the mood words in the corner)
+      this.synth = new MB.LabSynth();
+      this.material = MB.LabMaterial;
+      this.comp = new MB.LabCompositor(canvas);
+      this.dims = null;
       this.t = 0;
-      this.debug = new URLSearchParams(location.search).has('debug');
-      window.addEventListener('keydown', (e) => {
-        if ((e.key === 'd' || e.key === 'D') && !(e.target instanceof HTMLInputElement)) this.debug = !this.debug;
-      });
+      this.source = 'synth';
       this.resize();
+      this.motion = new MB.LabMotion(this.c.width / this.c.height);
       window.addEventListener('resize', () => this.resize());
+      window.addEventListener('keydown', (e) => {
+        if ((e.key === 'a' || e.key === 'A') && !(e.target instanceof HTMLInputElement)) {
+          this.source = this.source === 'synth' ? 'music' : 'synth';
+          this._flag(this.source === 'synth' ? 'synthetic input' : 'following the music');
+        }
+      });
+      if (new URLSearchParams(location.search).has('dev')) this._devPanel();
     }
 
     resize() {
-      this.dpr = Math.min(2, window.devicePixelRatio || 1);
-      this.c.width = Math.round(window.innerWidth * this.dpr);
-      this.c.height = Math.round(window.innerHeight * this.dpr);
+      const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+      const k = dpr * this.material.scale;
+      this.c.width = Math.max(64, Math.round(window.innerWidth * k));
+      this.c.height = Math.max(64, Math.round(window.innerHeight * k));
+      this._scale = this.material.scale;
+      if (this.motion) this.motion.asp = this.c.width / this.c.height;
     }
 
     reset() { this.music.reset(); this.dims = null; }
+
+    // the input the visuals follow: synthetic, or the music's own reading
+    _input() {
+      if (this.source === 'synth') return this.synth.v;
+      const m = this.music, D = m.dims || {};
+      return { ...D, lumin: m.lumin, palettePos: m.palettePos ?? 2 };
+    }
 
     update(f, dt) {
       this.t += dt;
       this.music.update(f, dt);
       this.dims = this.music.dims;
-      this.draw();
+      this.synth.update(dt);
+      if (this._scale !== this.material.scale) this.resize();
+      const input = this._input();
+      this.motion.step(dt, input);
+      this.draw(input);
     }
 
-    draw() {
-      const { ctx, c, music: m } = this;
-      const W = c.width, H = c.height;
-      const rgb = (col, a = 1) => `rgba(${col.map((v) => Math.round(v * 255)).join(',')},${a})`;
-      // the ground
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = rgb(MB.INK.ground);
-      ctx.fillRect(0, 0, W, H);
-      // placeholder: one faint, soft glow that breathes with the music
-      const r = Math.min(W, H) * (0.18 + 0.22 * m.lumin);
-      const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, r);
-      g.addColorStop(0, rgb(m.colA, 0.10 + 0.25 * m.lumin));
-      g.addColorStop(0.6, rgb(m.colB, 0.05 + 0.1 * m.lumin));
-      g.addColorStop(1, rgb(m.colB, 0));
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, W, H);
-      if (this.debug) this._readout();
+    draw(input = this._input()) {
+      const ramp = MB.INK.ramp, pos = input.palettePos ?? 2;
+      const lit = 0.55 + 0.9 * (input.lumin ?? 0.4);
+      // colour: each formation takes its own stretch of the palette, so warm
+      // and cool can sit side by side; the accent reaches a little further
+      const offs = [[0, 0.7], [0.6, 1.3], [1.3, 1.8]];
+      const forms = this.motion.forms.map((F, i) => ({
+        ctrl: F.ctrl, depth: F.depth,
+        colA: ramp(pos + offs[i][0]), colB: ramp(pos + offs[i][1]),
+        live: lit * [1, 0.85, 0.7][i],
+      }));
+      this.comp.render(forms, this.material, this.t, MB.INK.ground);
     }
 
-    // D: what the music module hears, as small bars
-    _readout() {
-      const { ctx, music: m, dpr } = this;
-      const D = m.dims || {};
-      const rows = [
-        ['harm', D.harm], ['energy', D.energy], ['rhythm', D.rhythm], ['tension', D.tension],
-        ['texture', D.texture], ['variation', D.variation], ['vol', m.vol], ['bass', m.bass],
-        ['mid', m.mid], ['high', m.high], ['lumin', m.lumin], ['beat', m.beats.length ? Math.max(0, 1 - m.beats[m.beats.length - 1].t * 2) : 0],
-      ];
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.font = `${11 * dpr}px Inter, system-ui, sans-serif`;
-      rows.forEach(([name, v], i) => {
-        const x = 16 * dpr, y = (16 + i * 16) * dpr;
-        ctx.fillStyle = 'rgba(240,235,230,0.55)';
-        ctx.fillText(name, x, y + 9 * dpr);
-        ctx.fillStyle = 'rgba(240,235,230,0.12)';
-        ctx.fillRect(x + 64 * dpr, y, 120 * dpr, 10 * dpr);
-        ctx.fillStyle = 'rgba(240,235,230,0.6)';
-        ctx.fillRect(x + 64 * dpr, y, 120 * dpr * Math.max(0, Math.min(1, v || 0)), 10 * dpr);
-      });
-      const y0 = (16 + rows.length * 16 + 4) * dpr;
-      [m.colA, m.colB].forEach((col, i) => {
-        ctx.fillStyle = `rgb(${col.map((v) => Math.round(v * 255)).join(',')})`;
-        ctx.fillRect((80 + i * 64) * dpr, y0, 56 * dpr, 12 * dpr);
-      });
+    _flag(text) {
+      let tag = document.getElementById('lab-tag');
+      if (!tag) {
+        tag = document.createElement('p');
+        tag.id = 'lab-tag';
+        tag.style.cssText = 'position:fixed;top:14px;right:20px;margin:0;font-size:15px;color:var(--ink-soft);transition:opacity .8s;pointer-events:none';
+        document.body.appendChild(tag);
+      }
+      tag.textContent = text;
+      tag.style.opacity = 1;
+      clearTimeout(tag._t);
+      tag._t = setTimeout(() => { tag.style.opacity = 0; }, 1600);
     }
 
-    // A still of the current moment, for saving.
+    // ?dev: sliders for the material, the movement and the synthetic input
+    _devPanel() {
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;top:12px;left:12px;z-index:9;padding:10px 12px;background:rgba(10,10,16,.8);color:#ddd;font:12px Inter,system-ui,sans-serif;border-radius:6px;line-height:1.8;max-height:calc(100vh - 24px);overflow:auto';
+      const row = (label, lo, hi, st, get, set, fmt = (v) => v) => {
+        const r = document.createElement('label');
+        r.style.cssText = 'display:grid;grid-template-columns:84px 120px 44px;gap:6px;align-items:center';
+        const inp = document.createElement('input');
+        Object.assign(inp, { type: 'range', min: lo, max: hi, step: st, value: get() });
+        const val = document.createElement('span');
+        val.textContent = fmt(get());
+        inp.addEventListener('input', () => { set(+inp.value); val.textContent = fmt(+inp.value); });
+        r.append(label, inp, val);
+        box.append(r);
+      };
+      const head = (t) => { const h = document.createElement('div'); h.textContent = t; h.style.cssText = 'margin-top:6px;color:#999;text-transform:uppercase;letter-spacing:.1em;font-size:10px'; box.append(h); };
+      head('material');
+      const M = this.material, Rg = MB.LabMaterialRanges;
+      for (const k in Rg) row(k, ...Rg[k], () => M[k], (v) => { M[k] = v; });
+      head('movement');
+      const P = this.motion.p;
+      for (const k of ['drift', 'swell', 'repel', 'pace']) row(k, 0, 3, 0.05, () => P[k], (v) => { P[k] = v; });
+      head('synthetic input (left end = automatic)');
+      for (const k of ['energy', 'harm', 'tension', 'texture', 'variation']) {
+        row(k, -0.05, 1, 0.01, () => this.synth.pin[k] ?? -0.05, (v) => { if (v < 0) delete this.synth.pin[k]; else this.synth.pin[k] = v; }, (v) => (v < 0 ? 'auto' : v.toFixed(2)));
+      }
+      document.body.appendChild(box);
+    }
+
+    // A still of the current moment, for saving (at full screen size).
     capture() {
       this.draw();
       const out = document.createElement('canvas');
-      out.width = this.c.width;
-      out.height = this.c.height;
-      const prev = this.debug;
-      this.debug = false;
-      this.draw();
-      out.getContext('2d').drawImage(this.c, 0, 0);
-      this.debug = prev;
+      const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+      out.width = Math.round(window.innerWidth * dpr);
+      out.height = Math.round(window.innerHeight * dpr);
+      const x = out.getContext('2d');
+      x.imageSmoothingQuality = 'high';
+      x.drawImage(this.c, 0, 0, out.width, out.height);
       return out;
     }
   }
