@@ -665,7 +665,7 @@ void main(){
   const GUIDE = {
     // (speeds are kept below what the particles can follow, so the gesture
     // bends and travels without tearing apart)
-    sweepAmp: 0.16, sweepAmpVol: 0.05, sweepCycles: 1.0, sweepSpeed: 0.04, sweepSpeedEnergy: 0.04,
+    sweepAmp: 0.01, sweepAmpVol: 0.05, sweepCycles: 1.0, sweepSpeed: 0.04, sweepSpeedEnergy: 0.04,
     foldAmp: 0.065, foldAmpMid: 0.09, foldK: 2.1, foldSpeed: 0.08, foldSpeedMid: 0.22,
     rollAmp: 0.025, rollAmpBass: 0.1, rollK: 0.6, rollSpeed: 0.3,
     pinch: 0.5, pinchTension: 0.25, pinchK: 1.3, pinchSpeed: 0.08, pinchSpeedEnergy: 0.15,
@@ -677,14 +677,14 @@ void main(){
 
     // VARIETY. Each refinement is independent; set its amount to 0 to turn
     // it off. All evolve continuously from slow noise (minutes), never switch.
-    orient: 0.15,       // rad: how far the gesture's axis turns (diagonal..near-vertical)
+    orient: 0.3,        // rad: how far the gesture's axis turns (diagonal..near-vertical)
     orientSpeed: 0.011, //   how quickly it turns
     arch: 0.45,         // bow into sweeping arcs (curvature at the ends)
     archSpeed: 0.009,
     scaleRange: 0.35,   // scale drift: 1 +/- this (intimate .. expansive)
     scaleEnergy: 0.25,  //   energetic music opens it up a little more
     scaleSpeed: 0.008,
-    curl: 1.7,          // occasional swelling of the folds into curls/overlaps
+    curl: 0.95,         // occasional swelling of the folds into curls/overlaps
     curlSpeed: 0.014,
     fine: 0.5,          // share of the fine warp octave kept (1 = as before; less = less crosshatching)
     irid: 0.72,         // rad: max secondary-hue shift (iridescence; 0 = off)
@@ -807,7 +807,7 @@ void main(){
       });
       // TWEAKS: overall multipliers on the music-driven shape and light, set
       // from the ?dev panel (1 = as designed)
-      this.tw = { waves: 1, thick: 1.45, spread: 1, speed: 1, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.6, sideThin: 0.45, sideMusic: 0.8, sideShare: 0.2, sideGap: 0.3 };
+      this.tw = { waves: 1, thick: 0.3, spread: 1.1, speed: 1.15, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.75, sideThin: 0.45, sideMusic: 1.4, sideShare: 0.2, sideGap: 0.3 };
       if (q.has('dev')) this._devPanel();
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
@@ -1562,7 +1562,7 @@ void main(){
       const S = [
         ['Shape and movement'],
         ['Number of waves', 'How many wave lines there are', TW, 'waves', 0.3, 2.5, 0.05],
-        ['Wave thickness', 'How wide each wave is', TW, 'thick', 0.3, 3, 0.05],
+        ['Wave thickness', 'How wide each wave is', TW, 'thick', 0.1, 3, 0.05],
         ['Size of the whole form', 'How far the waves spread across the screen', TW, 'spread', 0.4, 1.8, 0.05],
         ['Big sweeping curve', 'How much the whole gesture rises and falls', G, 'sweepAmp', 0, 0.45, 0.01],
         ['Bends and folds', 'Medium-size bends along the waves', G, 'foldAmp', 0, 0.2, 0.005],
