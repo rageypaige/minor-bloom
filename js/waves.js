@@ -670,8 +670,8 @@ void main(){
   const GUIDE = {
     // (speeds are kept below what the particles can follow, so the gesture
     // bends and travels without tearing apart)
-    sweepAmp: 0.17, sweepAmpVol: 0.05, sweepCycles: 1.0, sweepSpeed: 0.04, sweepSpeedEnergy: 0.04,
-    foldAmp: 0.04, foldAmpMid: 0.09, foldK: 2.1, foldSpeed: 0.08, foldSpeedMid: 0.22,
+    sweepAmp: 0.19, sweepAmpVol: 0.05, sweepCycles: 1.0, sweepSpeed: 0.04, sweepSpeedEnergy: 0.04,
+    foldAmp: 0.065, foldAmpMid: 0.09, foldK: 2.1, foldSpeed: 0.08, foldSpeedMid: 0.22,
     rollAmp: 0.025, rollAmpBass: 0.1, rollK: 0.6, rollSpeed: 0.3,
     pinch: 0.5, pinchTension: 0.25, pinchK: 1.3, pinchSpeed: 0.08, pinchSpeedEnergy: 0.15,
     turb: 0.3,          // share of the original eddy turbulence kept
@@ -682,17 +682,17 @@ void main(){
 
     // VARIETY. Each refinement is independent; set its amount to 0 to turn
     // it off. All evolve continuously from slow noise (minutes), never switch.
-    orient: 1.2,        // rad: how far the gesture's axis turns (diagonal..near-vertical)
+    orient: 0.15,       // rad: how far the gesture's axis turns (diagonal..near-vertical)
     orientSpeed: 0.011, //   how quickly it turns
     arch: 0.45,         // bow into sweeping arcs (curvature at the ends)
     archSpeed: 0.009,
     scaleRange: 0.35,   // scale drift: 1 +/- this (intimate .. expansive)
     scaleEnergy: 0.25,  //   energetic music opens it up a little more
     scaleSpeed: 0.008,
-    curl: 1.3,          // occasional swelling of the folds into curls/overlaps
+    curl: 1.7,          // occasional swelling of the folds into curls/overlaps
     curlSpeed: 0.014,
     fine: 0.25,         // share of the fine warp octave kept (1 = as before; less = less crosshatching)
-    irid: 0.32,         // rad: max secondary-hue shift (iridescence; 0 = off)
+    irid: 0.72,         // rad: max secondary-hue shift (iridescence; 0 = off)
   };
 
   // Colour families by tonal temperature. They share a similar lightness on
@@ -772,9 +772,10 @@ void main(){
     // INK (the default): gallery with Paige's ink palette and aubergine
     // charcoal ground; split-toning and saturation eased so the palette's
     // own hues lead
-    ink:        { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.3, comp: 0, silkBright: 0.45, stride: 10, len: 0.03, veil: 0.95, glow: 1.4,
-                  saturation: 1.1, compress: 0.75, yellowShift: 0.25,
-                  arcFocus: 1, toe: 0.32, localContrast: 0.12, halation: 0.6, splitTone: 0, colourDrift: 0.35, grain: 0.35, palette: 'ink' },
+    // (Paige's tuning from the experiment panel)
+    ink:        { trailBase: 0.06, trailVol: 0.55, trailOpacity: 0.3, comp: 0, silkBright: 0.3, stride: 10, len: 0.03, veil: 0.95, glow: 1.4,
+                  saturation: 1.05, compress: 0.75, yellowShift: 0.25,
+                  arcFocus: 1, toe: 0, localContrast: 0.12, halation: 1.15, splitTone: 0, colourDrift: 0.35, grain: 0.35, palette: 'ink' },
     // tuned + the experimental asymmetric ribbon profile (the default)
     curtain:    { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25,
                   ribbon: 1, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8 },
@@ -811,7 +812,7 @@ void main(){
       });
       // TWEAKS: overall multipliers on the music-driven shape and light, set
       // from the ?dev panel (1 = as designed)
-      this.tw = { waves: 1, thick: 1, spread: 1, speed: 1, wavy: 1, bright: 1, ripples: 1, strands: 1, fine: 1, spine: 0, spinePos: 0, coreBright: 0.5, coreSize: 1.3 };
+      this.tw = { waves: 1, thick: 0.8, spread: 1.4, speed: 1, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: 0.6, coreBright: 1.35, coreSize: 2.55 };
       if (q.has('dev')) this._devPanel();
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
@@ -1394,7 +1395,7 @@ void main(){
       gl.uniform1f(P.u.u_coreBright, this.tw.coreBright);
       gl.uniform1f(P.u.u_coreSize, this.tw.coreSize);
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension));
-      gl.uniform1f(P.u.u_size, 2.4 * this.dpr * this.tw.fine);  // thicker lines
+      gl.uniform1f(P.u.u_size, 2.4 * this.dpr * this.tw.fineness);  // thicker lines
       gl.uniform3fv(P.u.u_colA, this.colA);
       gl.uniform3fv(P.u.u_colB, this.colB);
       gl.uniform3fv(P.u.u_colAcc, this.colAcc || [1, 1, 1]);
@@ -1560,7 +1561,7 @@ void main(){
         ['Beat ripples', 'How strongly beats send ripples through the waves', TW, 'ripples', 0, 3, 0.05],
         ['Strands'],
         ['Number of strands', 'How many fine strands make up each wave (fewer = clearer gaps)', TW, 'strands', 0.1, 3, 0.05],
-        ['Strand fineness', 'How thick the particles that draw the strands are', TW, 'fine', 0.4, 2.5, 0.05],
+        ['Strand fineness', 'How thick the particles that draw the strands are', TW, 'fineness', 0.3, 2.5, 0.05],
         ['Core strand', 'How many particles gather into one grounding strand (0 = none)', TW, 'spine', 0, 0.5, 0.01],
         ['Core brightness', 'How bright the grounding strand is', TW, 'coreBright', 0, 3, 0.05],
         ['Core width', 'How thick the grounding strand is', TW, 'coreSize', 0.5, 3, 0.05],
