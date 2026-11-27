@@ -28,19 +28,8 @@
   }
 
   let atmos = null;
-  // The particle waves are the default; ?style=sky keeps the night-sky style
-  // Default: the guided ribbons. ?style=waves keeps the unguided particle
-  // waves, ?style=sky the night-sky style. (?style=ribbons still works.)
-  const styleQ = new URLSearchParams(location.search).get('style');
-  const wantWaves = styleQ !== 'sky';
-  const waveOpts = styleQ === 'waves' ? {} : { mode: 'guides' };
-  // silk light is the default; ?material=original shows the plain points,
-  // and M toggles between them live
-  waveOpts.silk = new URLSearchParams(location.search).get('material') !== 'original';
-  try { atmos = wantWaves && MB.Waves ? new MB.Waves($('#atmos'), waveOpts) : new MB.Atmosphere($('#atmos')); } catch (e) {
-    console.warn('Style unavailable:', e);
-    if (wantWaves) { try { atmos = new MB.Atmosphere($('#atmos')); } catch (e2) { /* no WebGL2 */ } }
-  }
+  // The waves of light (js/waves.js), guided into one flowing gesture.
+  try { atmos = new MB.Waves($('#atmos'), { mode: 'guides' }); } catch (e) { console.warn('Minor Bloom could not start drawing:', e); }
   let lastF = null;
 
   const finalCanvas = $('#final');
@@ -372,25 +361,6 @@
     document.querySelectorAll('#intro .links').forEach((n) => { n.hidden = true; });
     setError('Minor Bloom needs WebGL2 to draw its sky. Try a recent version of Chrome, Edge, Safari or Firefox.');
   }
-
-  // M switches the rendering material (current / silk) on the very same
-  // particles, for comparing; a small word says which one is showing.
-  window.addEventListener('keydown', (e) => {
-    if (e.key !== 'm' && e.key !== 'M') return;
-    if (!atmos || !('silk' in atmos) || e.target instanceof HTMLInputElement) return;
-    atmos.silk = !atmos.silk;
-    let tag = document.getElementById('mat-tag');
-    if (!tag) {
-      tag = document.createElement('p');
-      tag.id = 'mat-tag';
-      tag.style.cssText = 'position:fixed;top:14px;right:20px;margin:0;font-size:15px;color:var(--ink-soft);transition:opacity .8s;pointer-events:none';
-      document.body.appendChild(tag);
-    }
-    tag.textContent = atmos.silk ? 'silk' : 'original';
-    tag.style.opacity = 1;
-    clearTimeout(tag._t);
-    tag._t = setTimeout(() => { tag.style.opacity = 0; }, 1600);
-  });
 
   // For testing from the console.
   MB.debug = { atmos, get listener() { return listener; }, get timeline() { return timeline; }, finish };

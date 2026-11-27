@@ -314,13 +314,6 @@ uniform float u_spine, u_coreBright, u_coreSize; // CORE STRAND
 uniform float u_sideVis; // SIDE WAVES: how much they show
 uniform sampler2D u_side;  // per particle: how much it belongs to a side wave (from the simulation)
 uniform float u_sideShare; // SIDE WAVES: share of particles that live on them
-// RIBBON PROFILE (rendering only): (amount, asymmetry, width variation,
-// edge softness), (density falloff, density variation, dissolve, twist)
-uniform vec4 u_rib1, u_rib2; uniform float u_ribGain;
-// SHEER (rendering only): (channel depth, channel scale, second layer, interior clarity)
-uniform vec4 u_rib3;
-// smooth, low-frequency variation in 0..1 (coherent along the ribbon)
-float lf(float x, float t, float s){ return clamp(.5 + .3 * sin(x * 1.3 + t * .045 + s) + .2 * sin(x * 2.9 - t * .06 + s * 2.7), 0., 1.); }
 ${GUIDE_FN}
 uniform vec2 u_center;
 out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp; out vec2 v_pos; out float v_sig;
@@ -523,8 +516,6 @@ void main(){
   const OUT = `#version 300 es
 precision highp float;
 uniform sampler2D u_light, u_glow, u_veil, u_arcs; uniform vec2 u_res, u_gpx, u_vpx; uniform float u_time, u_exposure, u_lumin, u_glowAmt, u_veilAmt, u_trailAmt, u_arcOn; uniform vec3 u_base;
-// which layers are shown (trails, arcs, veil, glow); for isolating them
-uniform vec4 u_show;
 uniform float u_compress; // SHEER: highlight compression (0 = off)
 uniform float u_sat;      // colour saturation (1 = as before)
 uniform float u_yshift;   // steer yellow/olive hues toward amber/peach (0 = off)
@@ -541,9 +532,9 @@ void main(){
   // up faster than it adds; intense music reveals this, quiet music doesn't
   float ll = dot(L, vec3(.3, .59, .11));
   L *= 1. + u_lumin * 2.4 * smoothstep(.1, .8, ll);
-  // LAYER 1, particle trails: weighted (and shown or hidden) on their own
+  // particle trails, weighted on their own
   vec3 T = L;
-  L = T * u_trailAmt * u_show.x;
+  L = T * u_trailAmt;
   // SOFT DIFFUSED LIGHT around the most luminous filaments (wide, faint)
   vec3 G = vec3(0.);
   for (int i = 0; i < 12; i++) {
@@ -551,8 +542,8 @@ void main(){
     G += texture(u_glow, uv + vec2(cos(a), sin(a)) * rad * u_gpx).rgb;
   }
   G += texture(u_glow, uv).rgb * 2.;
-  L += G / 14. * u_glowAmt * u_show.w;                  // LAYER 4, glow
-  if (u_arcOn > 0.) L += texture(u_arcs, uv).rgb * u_show.y; // LAYER 2, SILK: this frame's arcs
+  L += G / 14. * u_glowAmt;                              // glow
+  if (u_arcOn > 0.) L += texture(u_arcs, uv).rgb;         // SILK: this frame's strokes
   // SILK: ATMOSPHERIC VEIL. A wide, faint translucent haze of coloured light
   // made from the filaments themselves (no fog of its own): it gathers
   // where they are dense and falls away fast where they aren't, so the
@@ -566,7 +557,7 @@ void main(){
     }
     V /= 14.;
     float vl = dot(V, vec3(.3, .59, .11));
-    L += V * smoothstep(.004, .05, vl) * u_veilAmt * u_show.z; // LAYER 3, veil
+    L += V * smoothstep(.004, .05, vl) * u_veilAmt;           // veil
   }
   // GALLERY 2, selective light: faint, diffuse light is held lower, so the
   // shadows stay rich and the darkness generous, while the focal areas
@@ -756,77 +747,39 @@ void main(){
   // SILK material tuning (rendering only)
   const SILK = {
     lineW: 0.32,  // half-width of a filament line, in CSS pixels (x tier size)
-    // (arc brightness, stride, length and the veil now live in
-    // RENDER_PRESETS below, so they can be adjusted live with ?dev)
+    // (stroke brightness, stride, length and the veil are in RENDER below)
   };
 
-  // RENDERING DEVELOPMENT CONTROLS (drawing only: the simulation, guidance,
-  // particle counts, flow and musical response are untouched).
+  // HOW THE LIGHT IS DRAWN (all adjustable live in the ?dev panel). These
+  // are Paige's settings from the experiment panel.
   //   trailBase/trailVol: how long trails last, seconds: (base + vol * loudness) * mood
   //   trailOpacity:  how much the particle trails count in the final image
-  //   comp:          make up for light lost to shorter trails (0 = none,
-  //                  1 = full) by brightening the particles, not lengthening trails
-  //   silkBright/stride/len: the silk arc layer (silkBright 0 = off)
+  //   comp:          brighten particles to make up for short trails (0 = off)
+  //   silkBright/stride/len: the short silk strokes (brightness, one per
+  //                  `stride` particles, length); arcFocus gathers them at bends
   //   veil, glow:    the atmospheric veil and the soft glow
-  // ?render=baseline / shortTrails / tuned picks a preset (tuned is the default); ?dev shows sliders; L cycles
-  // through viewing each layer on its own.
-  const RENDER_PRESETS = {
-    baseline:   { trailBase: 0.18, trailVol: 0.45, trailOpacity: 1, comp: 0, silkBright: 0.2, stride: 4, len: 0.11, veil: 0.2, glow: 1 },
-    shortTrails: { trailBase: 0.04, trailVol: 0.12, trailOpacity: 0.75, comp: 0.6, silkBright: 0, stride: 4, len: 0.11, veil: 0.6, glow: 1 },
-    // Paige's tuning (the default): long, faint trails; short, bright silk
-    // strokes from a sparse set of particles; a strong veil and glow
-    tuned:      { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25 },
-    // tuned with richer colour: more saturation, and the brightest light
-    // compressed so it keeps its colour instead of washing out (the default)
-    vivid:      { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25,
-                  saturation: 1.7, compress: 0.5, yellowShift: 0.6 },
-    // GALLERY (the default): vivid, refined toward experimental photography.
-    // Fewer, focused crisp accents; less haze; rich shadows; warm halation
-    // only around the strongest highlights; split-toned colour; finer grain.
-    gallery:    { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.3, comp: 0, silkBright: 0.45, stride: 10, len: 0.03, veil: 0.95, glow: 1.4,
-                  saturation: 1.3, compress: 0.75, yellowShift: 0.6,
-                  arcFocus: 1, toe: 0.32, localContrast: 0.12, halation: 0.6, splitTone: 0.6, colourDrift: 0.35, grain: 0.35 },
-    // INK (the default): gallery with Paige's ink palette and aubergine
-    // charcoal ground; split-toning and saturation eased so the palette's
-    // own hues lead
-    // (Paige's tuning from the experiment panel)
-    ink:        { trailBase: 0.06, trailVol: 0.55, trailOpacity: 0.3, comp: 0, silkBright: 0.3, stride: 10, len: 0.03, veil: 0.95, glow: 1.4,
-                  saturation: 1.05, compress: 0.75, yellowShift: 0.25,
-                  arcFocus: 1, toe: 0, localContrast: 0.12, halation: 1.15, splitTone: 0, colourDrift: 0.35, grain: 0.35, palette: 'ink' },
-    // tuned + the experimental asymmetric ribbon profile (the default)
-    curtain:    { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25,
-                  ribbon: 1, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8 },
-    // curtain + sheer-fabric interior (the default)
-    sheer:      { trailBase: 0.4, trailVol: 0.55, trailOpacity: 0.2, comp: 0, silkBright: 1, stride: 10, len: 0.03, veil: 1.2, glow: 2.25,
-                  ribbon: 1, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 3.3,
-                  channels: 0.55, channelScale: 2.2, layers: 0.7, clarity: 0.5, compress: 0.6 },
+  //   saturation, compress (bright colours stay coloured), yellowShift (golds
+  //   never olive), toe (shadow depth), localContrast, halation (warm halo),
+  //   splitTone / colourDrift (warm highlights, cool shadows), grain, palette
+  const RENDER = {
+    trailBase: 0.06, trailVol: 0.55, trailOpacity: 0.3, comp: 0,
+    silkBright: 0.3, stride: 10, len: 0.03, arcFocus: 1,
+    veil: 0.95, glow: 1.4,
+    saturation: 1.05, compress: 0.75, yellowShift: 0.25,
+    toe: 0, localContrast: 0.12, halation: 1.15, splitTone: 0, colourDrift: 0.35, grain: 0.35,
+    palette: 'ink',
   };
-  // ribbon profile settings default to off, so older presets look as they did
-  const RIBBON_OFF = { ribbon: 0, asym: 0.8, widthVar: 0.6, edgeSoft: 0.3, falloff: 1.4, densityVar: 0.45, dissolve: 0.08, twist: 1, gain: 2.8,
-                       channels: 0, channelScale: 2.2, layers: 0, clarity: 0, compress: 0, saturation: 1, yellowShift: 0,
-                       arcFocus: 0, toe: 0, localContrast: 0, halation: 0, splitTone: 0, colourDrift: 0, grain: 1, palette: 'original' };
-  for (const k in RENDER_PRESETS) RENDER_PRESETS[k] = { ...RIBBON_OFF, ...RENDER_PRESETS[k] };
-  const DEFAULT_PRESET = 'ink';
-  const LAYERS = ['all', 'trails', 'arcs', 'veil', 'glow'];
 
   class Waves {
     constructor(canvas, opts = {}) {
       this.c = canvas;
       // 'guides': the original simulation plus soft compositional guidance
       this.guides = opts.mode === 'guides';
-      // the 'silk' rendering material (see PTS_VS and OUT); toggled live
-      // with the M key so it can be compared on the very same particles
-      this.silk = !!opts.silk;
+      // the 'silk' material: short silk strokes and the atmospheric veil on
+      // top of the particle trails (see PTS_VS and OUT)
+      this.silk = true;
       const q = new URLSearchParams(location.search);
-      this.R = { ...RENDER_PRESETS[RENDER_PRESETS[q.get('render')] ? q.get('render') : DEFAULT_PRESET] };
-      this.layer = Math.max(0, LAYERS.indexOf(q.get('layer') || 'all'));
-      window.addEventListener('keydown', (e) => {
-        if ((e.key === 'l' || e.key === 'L') && !(e.target instanceof HTMLInputElement)) {
-          this.layer = (this.layer + 1) % LAYERS.length;
-          this._flag('layer: ' + LAYERS[this.layer]);
-          if (this._devSync) this._devSync();
-        }
-      });
+      this.R = { ...RENDER };
       // TWEAKS: overall multipliers on the music-driven shape and light, set
       // from the ?dev panel (1 = as designed)
       this.tw = { waves: 1, thick: 0.3, spread: 1.1, speed: 1.15, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.75, sideThin: 0.45, sideMusic: 1.4, sideShare: 0, sideGap: 0.3, dust: 0.2 };  // (side waves off by default)
@@ -1025,8 +978,6 @@ void main(){
         const target = this.songD && !this.idle ? 0.7 * raw[k] + 0.3 * this.songD[k] : raw[k];
         this.dims[k] += (target - this.dims[k]) * ease(dt, tau[k]);
       }
-      // (testing only: MB.debug.atmos._harmOverride = 0..1 pins the harmony)
-      if (this._harmOverride != null) this.dims.harm = this._harmOverride;
       const D = this.dims;
       const { energy: E, rhythm: R, texture: X, variation: V } = D;
       const T = D.tension;
@@ -1485,10 +1436,6 @@ void main(){
       gl.uniform1f(P.u.u_irid, this.guides ? GUIDE.irid : 0);
       this._setGuide(P);
       gl.uniform1f(P.u.u_mat, isSeg ? 1 : 0);
-      gl.uniform4f(P.u.u_rib1, this.guides ? R.ribbon : 0, R.asym, R.widthVar, R.edgeSoft);
-      gl.uniform4f(P.u.u_rib2, R.falloff, R.densityVar, R.dissolve, R.twist);
-      gl.uniform1f(P.u.u_ribGain, R.gain);
-      gl.uniform4f(P.u.u_rib3, R.channels, R.channelScale, R.layers, R.clarity);
       gl.uniform1f(P.u.u_strands, Math.max(1, M.strands * this.tw.strands));
       gl.uniform1f(P.u.u_spine, this.tw.spine);
       gl.uniform1f(P.u.u_coreBright, this.tw.coreBright);
@@ -1590,9 +1537,6 @@ void main(){
       gl.uniform1f(P.u.u_drift, R.colourDrift);
       gl.uniform1f(P.u.u_grain, R.grain);
       gl.uniform1f(P.u.u_arcOn, this.silk && R.silkBright > 0 ? 1 : 0);
-      const ly = LAYERS[this.layer];
-      gl.uniform4f(P.u.u_show, ly === 'all' || ly === 'trails' ? 1 : 0, ly === 'all' || ly === 'arcs' ? 1 : 0,
-        ly === 'all' || ly === 'veil' ? 1 : 0, ly === 'all' || ly === 'glow' ? 1 : 0);
       // quiet passages sit lower; intense ones open up
       gl.uniform1f(P.u.u_exposure, (0.95 + 0.75 * lum2) * this.tw.bright);
       const tint = this.colA.map((v) => v * 0.02);
