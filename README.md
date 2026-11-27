@@ -21,7 +21,10 @@ Live at [paigelatimer.ca/minor-bloom](https://paigelatimer.ca/minor-bloom/).
 3. Keep the Minor Bloom window visible while you listen. Browsers pause pages
    hidden in background tabs, so put the windows side by side or start the
    song and switch back.
-4. **save** keeps a still of the sky as it is right now, and the music plays
+4. Optionally, type what you're listening to on the start screen. It shows
+   in the corner while you listen and on the stills you save (for an audio
+   file, its name is used if you leave it empty).
+5. **save** keeps a still of the sky as it is right now, and the music plays
    on. When the song ends (or you click **finish**, or stop sharing), you get
    the last moment to name and save.
 

@@ -85,6 +85,11 @@
     $('#hud').classList.remove('quiet');
     $('#mood-word').textContent = 'listening…';
     $('#mood-detail').textContent = '';
+    // the song, if one was given (an audio file's name if nothing was typed)
+    if (!$('#song').value.trim() && file && file.name) $('#song').value = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ');
+    const song = $('#song').value.trim();
+    $('#mood-song').textContent = song;
+    show($('#mood-song'), !!song);
   }
 
   function finish() {
@@ -114,6 +119,8 @@
     const dur = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
     summary.bpm = Math.round(bpm);
     summary.caption = `${dur} · leaning ${summary.keyName} · about ${summary.bpm} bpm · ${MB.moodWord(0.5 * avgMode + 0.5 * summary.modeValue, avgEnergy)}`;
+    const songName = $('#song').value.trim();
+    if (songName) summary.caption = `${songName} · ${summary.caption}`;
     $('#caption').textContent = summary.caption;
 
     // keep a still of the last moment
@@ -169,6 +176,8 @@
     const secs = Math.round(listener.analyzer.elapsed);
     const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
     const parts = [time];
+    const songName = $('#song').value.trim();
+    if (songName) parts.unshift(songName);
     if (hud && hud.key) parts.push(`leaning ${hud.key}`);
     if (hud && hud.word) parts.push(hud.word);
     downloadStill(atmos.capture(lastF || idleMood), '', parts.join(' · '), `moment-${time.replace(':', '-')}`);
@@ -185,6 +194,7 @@
     show($('#credit'), true);
     setError('');
     $('#title').value = '';
+    $('#song').value = '';
     atmos.reset();
   }
 

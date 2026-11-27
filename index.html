@@ -15,6 +15,7 @@
   <main id="intro">
     <h1>minor bloom</h1>
     <p class="tagline">music, rendered in light.</p>
+    <input id="song" type="text" placeholder="what are you listening to? (optional)" maxlength="80" aria-label="What are you listening to? (optional)">
     <nav class="links">
       <button id="btn-device" class="tab-only">listen to a tab</button>
       <span class="dot tab-only">·</span>
@@ -38,7 +39,7 @@
 
   <!-- While listening -->
   <div id="hud" hidden>
-    <p id="mood"><span id="mood-word">listening…</span> <span id="mood-detail"></span></p>
+    <p id="mood"><span id="mood-song" hidden></span><span id="mood-word">listening…</span> <span id="mood-detail"></span></p>
     <nav class="links">
       <button id="btn-snap" title="Save a still of this moment. The music keeps playing.">save</button>
       <span class="dot">·</span>
