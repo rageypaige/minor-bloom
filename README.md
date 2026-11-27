@@ -73,7 +73,9 @@ phone with **audio file**.
   curve, bends, wiggles, roughness, turbulence, curls, flow speed, tilting,
   beat ripples), the strands (how many, how fine, and a grounding **core
   strand**: how many particles gather into it, its brightness, width and
-  where it runs across the wave), the light and texture (brightness, trails, silk streaks,
+  where it runs across the wave), the side waves (how much the smaller
+  waves around the main one show, how thin they are, and how much fuller,
+  more upbeat passages bring them forward), the light and texture (brightness, trails, silk streaks,
   haze, glow, warm halo, shadow depth, grain) and the colour (richness,
   warm highlights / cool shadows, colour shimmer, keeping bright colours
   coloured). Hover a slider for what it does. Changes are live and are

@@ -113,6 +113,7 @@ uniform float u_time, u_dt, u_asp;
 uniform float u_freq, u_warp, u_levels, u_pull, u_flow, u_dust, u_spread, u_bassAmp, u_bassPhase;
 uniform vec2 u_center, u_seedOff; uniform float u_ang, u_thick, u_cross, u_crossAng, u_turb, u_strands, u_deep, u_deepPh, u_loosen;
 uniform float u_spine, u_spinePos; // CORE STRAND: share of particles in it, and where across the wave
+uniform float u_sideThin;          // SIDE WAVES: their thickness relative to the main wave
 uniform vec4 u_rip[4];
 out vec4 o;
 ${NOISE}
@@ -136,10 +137,17 @@ void main(){
   // Each wave is a bundle of strands: tender music has only a few, with
   // clear gaps between them (fine filaments); other moods have many, which
   // blend into a silky ribbon.
+  // SIDE WAVES (the smaller waves either side of the main gesture) are
+  // drawn thinner and are pushed around less, so they stay clean lines
+  float sideK = 0.;
+  if (u_guide > .5) {
+    float ca0 = cos(u_ang), sa0 = sin(u_ang);
+    sideK = smoothstep(.45, 1.1, abs(gDist(mat2(ca0, sa0, -sa0, ca0) * (p - u_center)) / (u_gBand * .8)));
+  }
   float lane = (floor(h1(seed * 4.3) * u_strands) + .5) / u_strands - .5;
   // CORE STRAND: some particles gather into one lane that grounds the wave
   if (h1(seed * 19.7) < u_spine) lane = u_spinePos;
-  float d = fract(n * u_levels + lane * u_thick + .5 * u_guide) - .5;
+  float d = fract(n * u_levels + lane * u_thick * mix(1., u_sideThin, sideK) + .5 * u_guide) - .5;
   vec2 toLine = (-d / u_levels) * g / g2;
   // ...and streaming along it
   // half the particles flow each way along the waves, so the light builds
@@ -164,7 +172,7 @@ void main(){
   if (u_turb > .001) {
     vec2 tq = p * 3.2 + u_seedOff;
     vec2 eddy = vec2(fbm(tq + vec2(u_time * .21, 0.)), fbm(tq + vec2(5.2, -u_time * .19))) - .47;
-    v += eddy * u_turb * .55;
+    v += eddy * u_turb * .55 * (1. - .8 * sideK);
   }
   // GUIDANCE: free inside the band around the guide; outside it, a soft
   // force draws particles back toward the composition
@@ -255,6 +263,7 @@ precision highp float;
 uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_spread, u_visible, u_ang;
 uniform float u_mat, u_strands, u_cross, u_time;
 uniform float u_spine, u_coreBright, u_coreSize; // CORE STRAND
+uniform float u_sideVis; // SIDE WAVES: how much they show
 // RIBBON PROFILE (rendering only): (amount, asymmetry, width variation,
 // edge softness), (density falloff, density variation, dissolve, twist)
 uniform vec4 u_rib1, u_rib2; uniform float u_ribGain;
@@ -296,6 +305,8 @@ void main(){
     vec2 rg = mat2(ca, sa, -sa, ca) * (s.xy - u_center);
     float gd = gDist(rg) / (u_gBand * .8);
     v_a *= (.3 + .7 * exp(-gd * gd)) * (1. + .7 * (1. - gPinch(rg.x)));
+    // the side waves show more in full, lush passages, less in sparse ones
+    v_a *= mix(1., u_sideVis, smoothstep(.45, 1.1, abs(gd)));
     // small groups that stray well clear of the ribbon fade away rather than
     // leaving short comb-like trails out in the dark
     v_a *= 1. - smoothstep(1.3, 1.9, abs(gd));
@@ -812,7 +823,7 @@ void main(){
       });
       // TWEAKS: overall multipliers on the music-driven shape and light, set
       // from the ?dev panel (1 = as designed)
-      this.tw = { waves: 1, thick: 1.45, spread: 1, speed: 1, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55 };
+      this.tw = { waves: 1, thick: 1.45, spread: 1, speed: 1, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.6, sideThin: 0.45, sideMusic: 0.8 };
       if (q.has('dev')) this._devPanel();
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
@@ -1307,6 +1318,7 @@ void main(){
       gl.uniform1f(P.u.u_strands, Math.max(1, M.strands * this.tw.strands)); // MOOD: filaments or silk
       gl.uniform1f(P.u.u_spine, this.tw.spine);
       gl.uniform1f(P.u.u_spinePos, this.tw.spinePos);
+      gl.uniform1f(P.u.u_sideThin, this.tw.sideThin);
       // (guided: no independent crossing currents)
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension)); // MOOD + TENSION: intersecting currents
       gl.uniform1f(P.u.u_crossAng, 1.05 + 0.4 * Math.sin(this.t * 0.02));
@@ -1394,6 +1406,9 @@ void main(){
       gl.uniform1f(P.u.u_spine, this.tw.spine);
       gl.uniform1f(P.u.u_coreBright, this.tw.coreBright);
       gl.uniform1f(P.u.u_coreSize, this.tw.coreSize);
+      // SIDE WAVES: base amount, raised by fullness and energy (upbeat, lush)
+      const fullE = clamp(0.6 * lush + 0.4 * (this.dims ? this.dims.energy : 0.4));
+      gl.uniform1f(P.u.u_sideVis, this.tw.side * (1 + this.tw.sideMusic * (1.6 * fullE - 0.6)));
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension));
       gl.uniform1f(P.u.u_size, 2.4 * this.dpr * this.tw.fineness);  // thicker lines
       gl.uniform3fv(P.u.u_colA, this.colA);
@@ -1566,6 +1581,10 @@ void main(){
         ['Core brightness', 'How bright the grounding strand is', TW, 'coreBright', 0, 3, 0.05],
         ['Core width', 'How thick the grounding strand is', TW, 'coreSize', 0.5, 3, 0.05],
         ['Core position', 'Where it runs across the wave (0 = middle, -0.5 / 0.5 = an edge)', TW, 'spinePos', -0.6, 0.6, 0.02],
+        ['Side waves'],
+        ['Side waves', 'How much the smaller waves around the main one show', TW, 'side', 0, 1.5, 0.05],
+        ['Side wave thickness', 'How thick they are compared with the main wave', TW, 'sideThin', 0.1, 1.2, 0.05],
+        ['Side waves follow the music', 'How much fuller, more upbeat passages bring them forward', TW, 'sideMusic', 0, 1.5, 0.05],
         ['Light and texture'],
         ['Brightness', 'Overall exposure', TW, 'bright', 0.3, 2.5, 0.05],
         ['Trail length', 'How long each particle leaves a trail', R, 'trailBase', 0, 1, 0.01],
