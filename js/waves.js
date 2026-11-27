@@ -115,7 +115,8 @@ uniform vec2 u_center, u_seedOff; uniform float u_ang, u_thick, u_cross, u_cross
 uniform float u_spine, u_spinePos; // CORE STRAND: share of particles in it, and where across the wave
 uniform float u_sideThin;          // SIDE WAVES: their thickness relative to the main wave
 uniform vec4 u_rip[4];
-out vec4 o;
+layout(location = 0) out vec4 o;
+layout(location = 1) out vec4 o2; // per particle: how much it belongs to a side wave
 ${NOISE}
 ${GUIDE_FN}
 ${FIELD_FN}
@@ -137,16 +138,25 @@ void main(){
   // Each wave is a bundle of strands: tender music has only a few, with
   // clear gaps between them (fine filaments); other moods have many, which
   // blend into a silky ribbon.
-  // SIDE WAVES (the smaller waves either side of the main gesture) are
-  // drawn thinner and are pushed around less, so they stay clean lines
-  float sideK = 0.;
-  if (u_guide > .5) {
-    float ca0 = cos(u_ang), sa0 = sin(u_ang);
-    sideK = smoothstep(.45, 1.1, abs(gDist(mat2(ca0, sa0, -sa0, ca0) * (p - u_center)) / (u_gBand * .8)));
-  }
   float lane = (floor(h1(seed * 4.3) * u_strands) + .5) / u_strands - .5;
   // CORE STRAND: some particles gather into one lane that grounds the wave
   if (h1(seed * 19.7) < u_spine) lane = u_spinePos;
+  // SIDE WAVES (the smaller waves either side of the main one) are drawn
+  // thinner and are pushed around less, so they stay clean lines. Which
+  // wave a particle belongs to is read from the field itself: the main
+  // wave is the wave line passing nearest the guide at this point, so the
+  // main wave is never mistaken for a side wave where it strays from the
+  // guide.
+  float sideK = 0.;
+  if (u_guide > .5) {
+    float ca0 = cos(u_ang), sa0 = sin(u_ang);
+    mat2 R0 = mat2(ca0, sa0, -sa0, ca0);
+    float gx = (R0 * (p - u_center)).x;
+    vec2 pg = u_center + transpose(R0) * vec2(gx, gY(gx));
+    float guideLevel = field(pg, ang, off) * u_levels + .5 * u_guide - .5;
+    float myLine = floor(n * u_levels + lane * u_thick + .5 * u_guide - .5 + .5);
+    sideK = smoothstep(.55, 1., abs(myLine - guideLevel));
+  }
   float d = fract(n * u_levels + lane * u_thick * mix(1., u_sideThin, sideK) + .5 * u_guide) - .5;
   vec2 toLine = (-d / u_levels) * g / g2;
   // ...and streaming along it
@@ -213,6 +223,7 @@ void main(){
     age = 0.;
   }
   o = vec4(p, age, seed);
+  o2 = vec4(sideK, 0., 0., 1.);
 }`;
 
   // 2s. SILK: the direction and bend of the wave line each particle is on,
@@ -264,6 +275,7 @@ uniform sampler2D u_state; uniform int u_w; uniform float u_asp, u_size, u_sprea
 uniform float u_mat, u_strands, u_cross, u_time;
 uniform float u_spine, u_coreBright, u_coreSize; // CORE STRAND
 uniform float u_sideVis; // SIDE WAVES: how much they show
+uniform sampler2D u_side;  // per particle: how much it belongs to a side wave (from the simulation)
 // RIBBON PROFILE (rendering only): (amount, asymmetry, width variation,
 // edge softness), (density falloff, density variation, dissolve, twist)
 uniform vec4 u_rib1, u_rib2; uniform float u_ribGain;
@@ -306,7 +318,7 @@ void main(){
     float gd = gDist(rg) / (u_gBand * .8);
     v_a *= (.3 + .7 * exp(-gd * gd)) * (1. + .7 * (1. - gPinch(rg.x)));
     // the side waves show more in full, lush passages, less in sparse ones
-    v_a *= mix(1., u_sideVis, smoothstep(.45, 1.1, abs(gd)));
+    v_a *= mix(1., u_sideVis, texelFetch(u_side, ij, 0).x);
     // small groups that stray well clear of the ribbon fade away rather than
     // leaving short comb-like trails out in the dark
     v_a *= 1. - smoothstep(1.3, 1.9, abs(gd));
@@ -934,9 +946,17 @@ void main(){
         data[i * 4 + 2] = Math.random() * 8; // age, staggered so they don't all fade at once
         data[i * 4 + 3] = Math.random() * 1000; // seed
       }
-      this.state = [this._tex(this.PW, this.PH, 'state', data), this._tex(this.PW, this.PH, 'state', null)];
-      this.tan = this.tan || this._tex(this.PW, this.PH, 'light');
       const gl = this.gl;
+      for (const T of [...(this.state || []), this.side]) if (T) { gl.deleteTexture(T.tex); gl.deleteFramebuffer(T.fb); }
+      this.state = [this._tex(this.PW, this.PH, 'state', data), this._tex(this.PW, this.PH, 'state', null)];
+      // the simulation also writes, per particle, whether it is on a side wave
+      this.side = this._tex(this.PW, this.PH, 'state', null);
+      for (const S of this.state) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, S.fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.side.tex, 0);
+        gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+      }
+      this.tan = this.tan || this._tex(this.PW, this.PH, 'light');
       for (const L of this.light || []) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, L.fb);
         gl.clearColor(0, 0, 0, 1);
@@ -1379,6 +1399,10 @@ void main(){
       gl.useProgram(P.p);
       gl.bindTexture(gl.TEXTURE_2D, this.state[0].tex);
       gl.uniform1i(P.u.u_state, 0);
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_2D, this.side.tex);
+      gl.uniform1i(P.u.u_side, 5);
+      gl.activeTexture(gl.TEXTURE0);
       if (isSeg) {
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.tan.tex);
