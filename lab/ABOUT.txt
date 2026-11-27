@@ -1,0 +1,3 @@
+This folder is a published copy of the bloom-lab branch, served at
+paigelatimer.ca/minor-bloom/lab/. Don't edit it here: change the bloom-lab
+branch, then copy it over again (see the bloom-lab README).

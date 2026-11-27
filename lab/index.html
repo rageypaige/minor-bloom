@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Minor Bloom Lab</title>
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;1,400&family=Inter:wght@400&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="atmos"></canvas>
+
+  <!-- Start -->
+  <main id="intro">
+    <h1>minor bloom</h1>
+    <p class="tagline">music, rendered in light. <span class="lab">lab</span></p>
+    <nav class="links">
+      <button id="btn-device" class="tab-only">listen to a tab</button>
+      <span class="dot tab-only">·</span>
+      <button id="btn-mic">microphone</button>
+      <span class="dot">·</span>
+      <label class="file-btn">audio file<input id="file" type="file" accept="audio/*" hidden></label>
+    </nav>
+    <p id="error" class="error" hidden></p>
+    <details class="help phone-only">
+      <summary>on a phone?</summary>
+      <p>Phones don’t let websites hear other apps, so Minor Bloom can’t listen to Spotify playing on this phone.</p>
+      <p>Instead, play your song on another speaker or computer and choose <em>microphone</em>, or pick a song saved on your phone with <em>audio file</em>.</p>
+    </details>
+    <details class="help tab-only">
+      <summary>using spotify?</summary>
+      <p>In Chrome or Edge, play your song at open.spotify.com in another tab. Click <em>listen to a tab</em>, choose that tab and turn on <em>Share tab audio</em>. Keep this window visible while you listen.</p>
+      <p>On Windows you can share your entire screen with <em>Share system audio</em> on instead, which works with the Spotify app.</p>
+    </details>
+  </main>
+  <footer id="credit">made with <span aria-label="love">&lt;3</span> by <a href="https://paigelatimer.ca">paige</a></footer>
+
+  <!-- While listening -->
+  <div id="hud" hidden>
+    <p id="mood"><span id="mood-word">listening…</span> <span id="mood-detail"></span></p>
+    <nav class="links">
+      <button id="btn-snap" title="Save a still of this moment. The music keeps playing.">save</button>
+      <span class="dot">·</span>
+      <button id="btn-finish">finish</button>
+    </nav>
+  </div>
+
+  <!-- The moment it ended -->
+  <section id="finale" hidden>
+    <div class="frame"><canvas id="final"></canvas></div>
+    <input id="title" type="text" placeholder="name this moment" maxlength="80">
+    <p id="caption"></p>
+    <nav class="links">
+      <button id="btn-save" disabled>save still</button>
+      <span class="dot">·</span>
+      <button id="btn-again">another song</button>
+    </nav>
+  </section>
+
+  <script src="js/shared.js"></script>
+  <script src="js/listener.js"></script>
+  <script src="js/music.js"></script>
+  <script src="js/lab.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
