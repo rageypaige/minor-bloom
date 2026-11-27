@@ -1,204 +1,50 @@
-# Minor Bloom
+# Minor Bloom: bloom lab
 
-Minor Bloom turns a song into a slowly evolving night sky: soft fields of
-coloured light drifting in a deep charcoal fog, with fine film grain and faint
-stars. It listens as the music plays and lets the song's mood, harmony and
-shape move the light. You can keep a still of any moment.
+This is the `bloom-lab` branch: a place to experiment with new visuals for
+Minor Bloom from a blank canvas, without touching the live site.
 
-Live at [paigelatimer.ca/minor-bloom](https://paigelatimer.ca/minor-bloom/).
+- Live site (the `main` branch): [paigelatimer.ca/minor-bloom](https://paigelatimer.ca/minor-bloom/)
+- This lab: [paigelatimer.ca/minor-bloom/lab](https://paigelatimer.ca/minor-bloom/lab/)
 
-## How to use it
+## What is kept
 
-1. Open the page in a recent browser (Chrome, Edge, Safari or Firefox).
-2. Choose how it should listen:
-   - **listen to a tab** (computers, Chrome or Edge). Open your song in the
-     Spotify web player (open.spotify.com) in another tab, click this, pick
-     that tab and switch on **Share tab audio**. On Windows you can share your
-     **entire screen** with **Share system audio** on instead, which works with
-     the Spotify app.
-   - **microphone**, to listen to music playing in the room.
-   - **audio file**, to play a song saved on your device.
-3. Keep the Minor Bloom window visible while you listen. Browsers pause pages
-   hidden in background tabs, so put the windows side by side or start the
-   song and switch back.
-4. **save** keeps a still of the sky as it is right now, and the music plays
-   on. When the song ends (or you click **finish**, or stop sharing), you get
-   the last moment to name and save.
+Everything except the visuals works exactly as on the main site: listening
+to a tab, the microphone or an audio file; the analysis of the music
+(`js/listener.js`); the mood words and key in the corner; and saving a still.
 
-**On a phone:** phones don't let websites hear other apps, so Minor Bloom
-can't listen to Spotify playing on the same phone. Play the song on another
-speaker or computer and choose **microphone**, or pick a song saved on the
-phone with **audio file**.
+The musical interpretation that used to live inside the old renderer is now
+its own module, `js/music.js`, so any new visual responds the same way:
 
-## What you'll see in the night-sky style
+- smoothed layers: `vol`, `bass`, `mid`, `high`, `drive`, `lush`, `bpm`,
+  `tension`, `quietAmt`, `acc`
+- `beats`: recent percussive hits worth showing, judged against the song's
+  own typical hits
+- `dims`: six sustained dimensions (`harm`, `energy`, `rhythm`, `tension`,
+  `texture`, `variation`), with the song's own fingerprint
+- `lumin`: an overall luminosity driver (quiet music stays restrained)
+- `colA`, `colB`, `colAcc`: colours from the ink palette (petrol ink, storm
+  blue, bruised plum, black cherry, copper rose, tarnished gold), chosen by
+  harmony and moved by chords; `MB.INK.ground` is the aubergine charcoal
 
-- **One form of light** that lives for the whole song, with a soft aura
-  around it, in a deep charcoal fog with fine film grain. The music shapes
-  its **size** (volume and fullness), its **shape** (it stretches, turns and
-  folds with the midrange), how far its light **spreads** (the aura widens as
-  the arrangement fills out) and its **colour** (the key, and each chord
-  washing through).
-- **Tendrils** that grow out of it while the music sustains and swells, and
-  draw back when it quiets.
-- **A faint night sky** behind: sparse stars that twinkle, hide behind bright
-  fog, and glint now and then with a cymbal or a bright high note.
-- **The song's shape:** as it builds, the light draws in and the edges
-  darken; when it arrives, it opens back up with deeper colour. The whole
-  scene slowly breathes once per musical phrase.
-- **Gentle songs stay gentle:** soft or undriven music (like solo piano) keeps
-  the form smaller and softer; full, driving music makes it larger and
-  brighter.
+## What is new
 
-## Styles
+`js/lab.js` is the blank canvas. It fills the ground and shows one faint
+placeholder glow in the current palette colour, so it's clear the music is
+coming through. New visuals go in its `draw()`.
 
-- **Guided ribbons** (the default): the particle simulation with soft compositional guidance. A guide
-  curve evolving on slow, medium and bass-driven timescales shapes the wave
-  field, and particles move freely within a band around it, drawn back
-  gently when they stray. The gesture stretches, folds, pinches and turns
-  over; filaments drift out and rejoin. Over minutes the composition also
-  slowly turns (horizontal, diagonal, near-vertical), arches, grows from
-  intimate to expansive and now and then curls over itself, with a faint
-  iridescent hue drift. Tuning lives in the `GUIDE` table in `js/waves.js`;
-  each variety setting can be set to 0 to turn it off.
-- **Silk light** (the default; `?material=original` shows the plain points,
-  and **M** switches between them while it plays): the original points stay,
-  and on top of them some particles also draw a faint, fine, tapered arc of
-  light along the wave line they sit on, fresh each frame (so they never pile
-  up into a tangle), adding smooth threads that follow the
-  ribbon's current shape, a few brighter signature strands and a soft veil
-  of coloured light around them. Rendering only: the movement is identical.
-  Tuning lives in the `RENDER_PRESETS` table in `js/waves.js`.
-- **Rendering development controls**: `?dev` shows sliders for trail
-  length, trail opacity, brightness make-up for short trails, the silk arcs
-  (brightness, stride, length), the veil and the glow; **L** (or
-  `?layer=trails|arcs|veil|glow`) shows each rendering layer on its own.
-  The default is the `ink` preset: `gallery` with Paige's ink palette, a
-  ramp from cool to warm: petrol ink #284F5B, storm blue #526B86, bruised
-  plum #70516D, black cherry #8E475B, copper rose #B7796B and tarnished
-  gold #B59A66, on aubergine charcoal #111016. Minor-leaning harmony sits
-  at petrol ink and storm blue, in-between harmony at bruised plum and black
-  cherry, major-leaning at copper rose and tarnished gold; the key nudges
-  the position a little, and chords move the second colour along the same
-  ramp (never off the palette). Split-toning is off and saturation eased so
-  the palette leads. `?render=gallery` shows the previous colours.
-  The `gallery` preset is a refinement of `vivid` toward
-  experimental photography (rendering only): the short crisp streaks gather
-  at the concentrated bends and fade elsewhere so the detail blends into
-  the light (`arcFocus`); less haze; faint diffuse light held lower for rich
-  shadows and generous darkness, eased in quiet music (`toe`); a little
-  local contrast so bends read clearly (`localContrast`); a warm, slightly
-  irregular halation only around the strongest highlights (`halation`);
-  split-toned colour, brighter light leaning amber and rose and dimmer light
-  mauve and violet, with a slow drift so warm and cool coexist within one
-  formation (`splitTone`, `colourDrift`); restrained saturation; and much
-  finer grain (`grain`). `?render=vivid` shows the previous look.
-  The `vivid` preset is the `tuned` look with richer colour
-  (`saturation`, 1 = as before; the brightest light is also compressed,
-  `compress`, so it keeps its colour instead of washing out to white).
-  `?render=tuned` shows it without. An experimental `curtain` preset
-  (`?render=curtain`) adds to the `tuned` look (long, faint trails;
-  short, bright silk strokes from a sparse set of particles; a strong veil
-  and glow) plus an experimental **asymmetric ribbon profile**. Across the
-  ribbon, the light gathers into a luminous edge on one side and falls away
-  nonlinearly into darkness on the other; the width swells into broad
-  sheets and narrows into fine ribbons along its length; the bright edge
-  migrates across as the ribbon seems to twist; soft bands of density run
-  through it; and some stretches dissolve. All of it is smooth, slow
-  variation along the ribbon, and only changes how much light each particle
-  gives, never where it goes. Sliders: `ribbon` (amount), `asym`,
-  `widthVar`, `edgeSoft`, `falloff`, `densityVar`, `dissolve`, `twist` and
-  `gain`. `?render=tuned` shows the look without it.
-  On top of that, the experimental `sheer` preset (`?render=sheer`) makes the interior read like
-  layers of illuminated sheer fabric: the inside of each formation turns
-  more transparent while the luminous edge stays defined (`clarity`),
-  darker translucent channels run through the lit material (`channels`,
-  `channelScale`), a second, fainter sheet overlaps inside the first with
-  its own soft edge (`layers`), and the brightest light is compressed so it
-  keeps its colour and detail instead of burning out to white (`compress`).
-  Each is 0 = off; `?render=curtain` shows the look without any of them.
-  `?render=baseline` and `?render=shortTrails` show the earlier looks. These
-  change only how the light is drawn, never how the particles move.
-- **Unguided particle waves**, at
-  [paigelatimer.ca/minor-bloom/?style=waves](https://paigelatimer.ca/minor-bloom/?style=waves): tens of thousands of particles of light
-  stream along flowing wave lines, layering into silky sheets in a night sky.
-  Volume sets their speed and brightness and how thick the waves get;
-  fullness how many waves there are and how far they spread; the midrange how
-  they curve and fold; bass a slow swell rolling through; highs a dust of
-  particles drifting off; harmony their colour.
-  **The music is read along six independent dimensions,** each a sustained,
-  smoothed characteristic rather than a mood preset:
-  - *harmonic character* (major/minor leaning, tonal brightness): colour
-    temperature and colour relationships only. Minor is not darker or
-    stormier; major is not brighter or happier.
-  - *energy* (loudness relative to the song, drive, fullness): movement
-    speed, expansion and luminosity.
-  - *rhythmic activity* (onset rate, drive): how often and how strongly
-    ripples disturb the strands.
-  - *harmonic tension* (poor chord fit, distant chords, where reliably
-    detectable): curvature, folding and structural complexity.
-  - *texture* (fullness, spectral spread, shimmer): how many strands, how
-    soft and how layered.
-  - *dynamic variation* (how much the music is changing): how quickly the
-    composition transforms.
-  So a slow, intimate, melancholic acoustic song gives a few long, gently
-  undulating filaments in generous space, low turbulence, restrained light,
-  slow transformation and muted, cool colour: profound without being
-  visually intense. The mood words in the corner are a poetic annotation
-  read from the same dimensions; they don't choose anything visual.
-  **Light is selective and depth is layered:** strands sit in a faint,
-  soft background, a middle layer and a few crisper foreground strands; light
-  builds where strands converge and when the music grows intense, with a
-  faint diffused glow around the most luminous filaments; a few strands carry
-  a lighter shade of their colour. Quiet passages stay very subtle.
-  Moods glide into each other rather than switching. Half of the blend is
-  the song's running average, and the key seeds the shape of the wave field,
-  so each song settles into a recognisable landscape of its own.
-  **Each part of the music has its own role** in the same living field:
-  - *low frequencies*: deep, slow currents that carry the whole field
-  - *mid frequencies*: the filaments' curvature and expressive movement
-  - *high frequencies*: a fine, fleeting shimmer on the strands' surface
-  - *percussive hits*: soft ripples travelling through the strands (strong
-    for drums, faint for a piano)
-  - *harmony*: gradual colour changes; chords far from the key reach toward
-    a contrasting colour family
-  - *harmonic tension* (dissonance, chromatic or distant chords): more
-    intersection, folding and turbulence
-  - *dynamic intensity*: luminosity, expansion and strand density
-  - *silence and quiet*: movement softens and strands gradually dissolve
-  Each has its own attack and decay, and levels are measured against each
-  track's own sustained loudness, so differently mastered songs behave alike.
-- **Night sky**, at
-  [paigelatimer.ca/minor-bloom/?style=sky](https://paigelatimer.ca/minor-bloom/?style=sky):
-  one soft form of light with growing tendrils, described below.
+Press **D** (or open with `?debug`) for a small readout of everything the
+music module hears.
 
-## What it listens for
-
-| In the music | In the sky |
-| --- | --- |
-| Major vs minor (the key and each chord) | Warm golds, peaches and roses ↔ cool violets and blues, muted, blended gradually; each chord change washes its colour through |
-| Volume | How large and luminous the form is |
-| Bass | Gentle swelling and soft pressure ripples |
-| Midrange | Its shape: stretching, turning and folding |
-| High frequencies | Fleeting fine points of light and shimmer; stars glint |
-| Tempo | The cadence of gestures and the length of each breath |
-| How full and driven it is | How big and bright it gets, and how far its aura spreads |
-| Builds and arrivals | The light draws in, then opens back up |
-
-Key and tempo detection are estimates. They are usually close, but can mix up
-relative keys (for example C major and A minor). Tempo is read over about 12
-seconds and folded into 72-144 bpm, so very slow or very fast songs show as
-double or half time; it changes only when a new tempo holds for a few seconds,
-and then glides there.
+The previous renderers (the particle waves and the night sky) are on the
+`main` branch and in the git history.
 
 ## Project layout
 
 - `index.html`, `css/style.css`: the page
-- `js/listener.js`: audio capture and analysis (loudness, bass/mid/high,
-  brightness, key, chords, tempo, melody)
-- `js/waves.js`: the particle-waves style, the default (WebGL2)
-- `js/atmosphere.js`: the night-sky style, at `?style=sky` (WebGL2)
+- `js/listener.js`: audio capture and analysis
+- `js/music.js`: the music, interpreted (layers, beats, dimensions, colour)
+- `js/lab.js`: the blank canvas
 - `js/shared.js`: noise, palettes and mood words
 - `js/app.js`: ties it all together
 
-No build step and nothing to install. It's plain HTML, CSS and JavaScript.
-An earlier paint style lives in the git history if it's ever wanted again.
+No build step and nothing to install.
