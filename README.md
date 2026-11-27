@@ -70,8 +70,8 @@ phone with **audio file**.
   Tuning lives in the `RENDER_PRESETS` table in `js/waves.js`.
 - **Experiment panel**: open with `?dev`. Plain-language sliders for the
   shape and movement (number of waves, thickness, size, the big sweeping
-  curve, bends, wiggles, roughness, turbulence, curls, flow speed, tilting,
-  beat ripples), the strands (how many, how fine, and a grounding **core
+  curve, bends, wiggles, roughness, turbulence, curls, how much the music reshapes the wave,
+  turning and moving with the music, flow speed, tilting, beat ripples), the strands (how many, how fine, and a grounding **core
   strand**: how many particles gather into it, its brightness, width and
   where it runs across the wave), the side waves (clean, thinner lines
   running parallel to the main wave with their own particles: how much they

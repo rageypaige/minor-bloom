@@ -687,6 +687,10 @@ void main(){
     curl: 0.95,         // occasional swelling of the folds into curls/overlaps
     curlSpeed: 0.014,
     fine: 0.5,          // share of the fine warp octave kept (1 = as before; less = less crosshatching)
+    // MUSIC RESHAPES THE WAVE (all smooth, over seconds):
+    shapeMusic: 1,      // how much the music reshapes it (0 = fixed shape)
+    turnMusic: 0.6,     // how far it turns with the music (radians)
+    driftMusic: 1,      // how much it moves around the screen with energy
     irid: 0.72,         // rad: max secondary-hue shift (iridescence; 0 = off)
   };
 
@@ -1084,6 +1088,26 @@ void main(){
       g.band *= Math.sqrt(g.scale);
       // curls: now and then the folds swell enough to overlap
       g.A[1] *= 1 + G.curl * Math.max(0, sn(G.curlSpeed, 73));
+      // ---- THE MUSIC RESHAPES IT (smoothly, over seconds) ----
+      const D = this.dims || {};
+      const Vv = D.variation ?? 0.3, Rr = D.rhythm ?? 0.3, SM = G.shapeMusic;
+      const ez = (key, target, tau) => (g[key] = (g[key] ?? target) + (target - (g[key] ?? target)) * (1 - Math.exp(-dt / tau)));
+      // sparse, calm music relaxes it toward a straight line; tense,
+      // energetic, changing music folds it deeply
+      const depth = ez('depthM', 0.15 + 1.7 * clamp(0.45 * E + 0.35 * T + 0.3 * Vv), 3);
+      g.A[1] *= 1 + SM * (depth - 1);
+      g.A[2] *= 1 + SM * 0.6 * (depth - 1);
+      // a big sweep rises with energy and change, and settles when calm
+      g.A[0] += SM * 0.12 * ez('sweepM', clamp(0.6 * E + 0.6 * Vv - 0.25), 4) * g.scale;
+      // wavelength: long gentle curves .. tighter, quicker ones (drifting
+      // slowly, quicker with busier rhythm)
+      const wl = ez('waveM', clamp(0.55 + 0.9 * (0.5 + 0.5 * sn(0.02, 83)) + 0.5 * (Rr - 0.4), 0.45, 2), 6);
+      g.K[1] *= 1 + SM * (wl - 1);
+      // it turns: slowly, further when the music is changing
+      g.turnPh = (g.turnPh ?? rnd(0, 6)) + dt * (0.015 + 0.05 * Vv);
+      this.ang += G.turnMusic * Math.sin(g.turnPh) * ez('turnM', 0.5 + 0.5 * clamp(E + Vv), 5);
+      // and it moves around the screen more when the music has energy
+      this.driftAmt = 1 + G.driftMusic * 1.2 * ez('driftM', E, 4);
       // length of the gesture across the screen for its current orientation
       g.len = Math.abs(Math.cos(this.ang)) * this.asp + Math.abs(Math.sin(this.ang));
       g.K = g.K.map((k) => k * Math.max(1, this.asp) / Math.max(0.8, g.len));
@@ -1194,8 +1218,9 @@ void main(){
 
       // the waves' centre drifts slowly near the middle
       const fs = this.focus.seed;
-      this.focus.x = MB.noise3(t * 0.01, fs, 0) * 0.3 * this.asp * 0.5;
-      this.focus.y = MB.noise3(fs, t * 0.01, 3) * 0.18;
+      const dA = this.driftAmt || 1; // (more with energy, see _guideStep)
+      this.focus.x = MB.noise3(t * 0.01 * Math.sqrt(dA), fs, 0) * 0.3 * dA * this.asp * 0.5;
+      this.focus.y = MB.noise3(fs, t * 0.01 * Math.sqrt(dA), 3) * 0.18 * dA;
 
       // HARMONIC CHARACTER: colour temperature. Brighter, major-leaning
       // harmony warms toward copper and champagne; darker-hued, minor-leaning
@@ -1571,6 +1596,9 @@ void main(){
         ['Turbulence', 'How much particles get pushed off their lines', G, 'turb', 0, 1.5, 0.05],
         ['Dust', 'Specks that drift off the waves (with the highs and in quiet passages)', TW, 'dust', 0, 2, 0.05],
         ['Curls', 'How often the folds swell into curls', G, 'curl', 0, 3, 0.05],
+        ['Music reshapes the wave', 'How much the music straightens, deepens and stretches it (0 = fixed shape)', G, 'shapeMusic', 0, 2, 0.05],
+        ['Turning with the music', 'How far the whole wave turns as the music changes', G, 'turnMusic', 0, 1.5, 0.05],
+        ['Moving around', 'How much it drifts around the screen with energy', G, 'driftMusic', 0, 2, 0.05],
         ['Flow speed', 'How fast the light streams along the waves', TW, 'speed', 0, 3, 0.05],
         ['Tilting', 'How far the whole form turns over time', G, 'orient', 0, 2, 0.05],
         ['Beat ripples', 'How strongly beats send ripples through the waves', TW, 'ripples', 0, 3, 0.05],
