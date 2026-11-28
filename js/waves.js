@@ -192,7 +192,10 @@ void main(){
     vec2 pg = u_center + transpose(R0) * vec2(gx, gY(gx));
     float guideLevel = field(pg, ang, off) * u_levels + .5 * u_guide - .5;
     float myLine = floor(n * u_levels + lane * u_thick + .5 * u_guide - .5 + .5);
-    sideK = smoothstep(.55, 1., abs(myLine - guideLevel));
+    // only the wave line nearest the guide is the current (a line two-thirds
+    // of a step or more away is hidden; exactly between two lines both show,
+    // softly, so the hand-over is smooth)
+    sideK = smoothstep(.35, .65, abs(myLine - guideLevel));
   }
   // a side-wave particle follows a line parallel to the main wave, a
   // fraction of the way to the next wave line (one or two steps out, on a
@@ -380,7 +383,7 @@ void main(){
     v_a *= 1. - texelFetch(u_side, ij, 0).x;
     // small groups that stray well clear of the ribbon fade away rather than
     // leaving short comb-like trails out in the dark
-    v_a *= 1. - smoothstep(1.15, 1.6, abs(gd));
+    v_a *= 1. - smoothstep(1., 1.4, abs(gd));
     expr = exp(-gd * gd * 1.6) * (.6 + 1.4 * (1. - gPinch(rg.x)));
   }
   // TENDER: only some particles are drawn, so the filaments are sparse
