@@ -71,15 +71,31 @@ uniform vec3 u_gA, u_gK, u_gPh, u_gTw;
 // gesture (u_gSpan either side of the centre), each moving up and down on its
 // own like a string; added to the layered sines
 uniform float u_gH[9]; uniform float u_gSpan;
-float gHt(int i){ return u_gH[clamp(i, 0, 8)]; }
-float gLine(float x, out float dydx){
+// TWO CURRENTS: a second formation follows the same guide plus an offset
+// curve (9 heights, u_gO). Calm music keeps the offset a generous, steady
+// gap; musical activity lets it swing through zero so the currents cross
+// and intertwine. Each shader sets gSel per particle: 0 = first current,
+// 1 = second (the pair sits either side of the guide).
+uniform float u_gO[9]; uniform float u_twoOn, u_twoShare;
+float formOf(float seed){ return u_twoOn > .5 && fract(sin(seed * 37.3 * 127.1) * 43758.5453) < u_twoShare ? 1. : 0.; }
+float gSel = 0.;
+float gHt(int i, int w){ int j = clamp(i, 0, 8); return w == 0 ? u_gH[j] : u_gO[j]; }
+float gCurve(float x, int w, out float dydx){
   float u = clamp((x / u_gSpan * .5 + .5) * 8., 0., 8.);
   int i = int(min(floor(u), 7.)); float t = u - float(i);
-  float p0 = gHt(i - 1), p1 = gHt(i), p2 = gHt(i + 1), p3 = gHt(i + 2);
+  float p0 = gHt(i - 1, w), p1 = gHt(i, w), p2 = gHt(i + 1, w), p3 = gHt(i + 2, w);
   float a = -p0 + p2, b = 2. * p0 - 5. * p1 + 4. * p2 - p3, c = -p0 + 3. * p1 - 3. * p2 + p3;
   float inside = step(abs(x), u_gSpan);
   dydx = .5 * (a + 2. * b * t + 3. * c * t * t) * (4. / u_gSpan) * inside;
   return .5 * (2. * p1 + a * t + b * t * t + c * t * t * t);
+}
+float gLine(float x, out float dydx){
+  float d0, d1;
+  float y = gCurve(x, 0, d0);
+  float o = u_twoOn > .5 ? gCurve(x, 1, d1) : (d1 = 0., 0.);
+  float k = u_twoOn > .5 ? gSel - .5 : 0.;
+  dydx = d0 + k * d1;
+  return y + k * o;
 }
 float gY(float x){ float d; return u_gA.x * sin(u_gK.x * x + u_gPh.x) + u_gA.y * sin(u_gK.y * x + u_gPh.y) + u_gA.z * sin(u_gK.z * x + u_gPh.z) + u_gArch * x * x + gLine(x, d); }
 float gDY(float x){ float d; gLine(x, d); return u_gA.x * u_gK.x * cos(u_gK.x * x + u_gPh.x) + u_gA.y * u_gK.y * cos(u_gK.y * x + u_gPh.y) + u_gA.z * u_gK.z * cos(u_gK.z * x + u_gPh.z) + 2. * u_gArch * x + d; }
@@ -140,6 +156,7 @@ float life(float seed){ return 5. + 9. * h1(seed * 3.1); }
 void main(){
   vec4 s = texelFetch(u_state, ivec2(gl_FragCoord.xy), 0);
   vec2 p = s.xy; float age = s.z, seed = s.w;
+  gSel = formOf(seed); // which current this particle belongs to
   float e = .003;
   // STORMY: some particles follow a second set of currents that cross the first
   bool crossing = h1(seed * 5.9) < u_cross;
@@ -286,6 +303,7 @@ vec2 tang(vec2 p, float ang, vec2 off){
 }
 void main(){
   vec4 s = texelFetch(u_state, ivec2(gl_FragCoord.xy), 0);
+  gSel = formOf(s.w);
   bool crossing = h1(s.w * 5.9) < u_cross;
   float ang = crossing ? u_ang + u_crossAng : u_ang;
   vec2 off = u_seedOff + (crossing ? vec2(17.3, -4.1) : vec2(0.));
@@ -316,7 +334,7 @@ uniform sampler2D u_side;  // per particle: how much it belongs to a side wave (
 uniform float u_sideShare; // SIDE WAVES: share of particles that live on them
 ${GUIDE_FN}
 uniform vec2 u_center;
-out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp; out vec2 v_pos; out float v_sig;
+out float v_a; out float v_s; out float v_acc; out float v_layer; out float v_sharp; out vec2 v_pos; out float v_sig; out float v_form;
 #ifdef SEG
 #define NSEG 8
 uniform sampler2D u_tan; uniform vec2 u_res; uniform float u_lineW, u_len, u_dust, u_arcFocus; uniform int u_stride;
@@ -331,6 +349,8 @@ void main(){
 #endif
   ivec2 ij = ivec2(id % u_w, id / u_w);
   vec4 s = texelFetch(u_state, ij, 0);
+  gSel = formOf(s.w);
+  v_form = gSel;
   float life = 5. + 9. * h1(s.w * 3.1);
   float env = smoothstep(0., 2.5, s.z) * (1. - smoothstep(life - 2.5, life, s.z));
   v_a = env;
@@ -452,8 +472,8 @@ void main(){
 }`;
   const PTS_FS = `#version 300 es
 precision highp float;
-uniform vec3 u_colA, u_colB, u_colAcc; uniform float u_bright, u_accent, u_lumin, u_shimmer, u_time, u_irid;
-in float v_a; in float v_s; in float v_acc; in float v_layer; in float v_sharp; in vec2 v_pos; in float v_sig;
+uniform vec3 u_colA, u_colB, u_colAcc; uniform float u_twoTint; uniform float u_bright, u_accent, u_lumin, u_shimmer, u_time, u_irid;
+in float v_a; in float v_s; in float v_acc; in float v_layer; in float v_sharp; in vec2 v_pos; in float v_sig; in float v_form;
 #ifdef SEG
 in float v_d; in float v_w;
 #endif
@@ -477,6 +497,8 @@ void main(){
   float disc = mix(exp(-rr * rr * 14.), smoothstep(.5, .15, rr), v_sharp);
 #endif
   vec3 col = mix(u_colA, u_colB, h1(v_s * 9.1));
+  // TWO CURRENTS: each leans toward its own colour; where they cross, the light mixes
+  col = mix(col, v_form > .5 ? mix(u_colB, u_colA, .2 * h1(v_s * 9.1)) : mix(u_colA, u_colB, .2 * h1(v_s * 9.1)), u_twoTint);
   // IRIDESCENCE: an understated hue drift across the field and between
   // fibres, within the palette (u_irid = max shift in radians; 0 = off)
   if (u_irid > 0.) col = hueRot(col, u_irid * sin(dot(v_pos, vec2(3.1, 2.3)) + u_time * .07 + h1(v_s * 3.3) * 1.2));
@@ -782,7 +804,8 @@ void main(){
       this.R = { ...RENDER };
       // TWEAKS: overall multipliers on the music-driven shape and light, set
       // from the ?dev panel (1 = as designed)
-      this.tw = { waves: 1, thick: 0.3, spread: 1.1, speed: 1.15, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.75, sideThin: 0.45, sideMusic: 1.4, sideShare: 0, sideGap: 0.3, dust: 0.2 };  // (side waves off by default)
+      this.tw = { twoOn: 1, twoShare: 0.42, twoGap: 1, inter: 1, interThr: 0.45, interAmp: 1, interIn: 1, interOut: 1,
+        waves: 1, thick: 0.3, spread: 1.1, speed: 1.15, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.75, sideThin: 0.45, sideMusic: 1.4, sideShare: 0, sideGap: 0.3, dust: 0.2 };  // (side waves off by default)
       if (q.has('dev')) this._devPanel();
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
@@ -1103,6 +1126,68 @@ void main(){
         }
         for (let i = 0; i < 9; i++) g.H[i] += g.Hv[i] * h;
       }
+      this._intertwine(dt, g);
+    }
+
+    // INTERTWINING. How engaged the two currents are is read from the music
+    // alone (see _interaction). The second current is the first plus an
+    // offset curve: at rest the offset is a generous, steady gap (with only
+    // a gentle independent drift); as the interaction rises the gap closes
+    // and the offset swings through zero in places, so whole formations
+    // cross and wind around each other, wherever the music's own slow
+    // variation puts the crossings (never a fixed braid). Neighbouring
+    // offsets are coupled so the curves stay smooth.
+    _intertwine(dt, g) {
+      const TW = this.tw, N = MB.noise3, sd = this.focus.seed;
+      const I = this._interaction(dt);
+      g.O = g.O || new Float32Array(9).fill(0.3);
+      g.Ov = g.Ov || new Float32Array(9);
+      const sep = 0.3 * TW.twoGap * (g.scale || 1);          // the calm gap (screen heights)
+      const D = this.dims || {};
+      g.Oph = (g.Oph ?? rnd(0, 50)) + dt * (0.03 + 0.12 * I * (0.5 + (D.rhythm ?? 0.3)));
+      const swing = TW.interAmp * 0.42 * (g.scale || 1);
+      const steps = 4, h = dt / steps;
+      for (let st = 0; st < steps; st++) {
+        for (let i = 0; i < 9; i++) {
+          const n = clamp(N(g.Oph + i * 0.95, sd * 3.7, 123) * 2.2, -1, 1);
+          const calm = sep * (1 + 0.12 * n);
+          const engaged = sep * 0.05 + swing * n;
+          const target = calm + (engaged - calm) * I;
+          const lap = g.O[Math.max(0, i - 1)] + g.O[Math.min(8, i + 1)] - 2 * g.O[i];
+          g.Ov[i] += (4 * (target - g.O[i]) + 5 * lap - 3.2 * g.Ov[i]) * h;
+        }
+        for (let i = 0; i < 9; i++) g.O[i] += g.Ov[i] * h;
+      }
+    }
+
+    // How strongly the music asks the currents to engage, 0..1. Built only
+    // from measures that are relative to the song itself (so a quiet
+    // recording is not automatically calm, nor a loud one energetic):
+    //   sustained energy  loudness against the song's own recent peak,
+    //                     averaged over several seconds
+    //   rhythmic density  onsets per second (each judged against the song's
+    //                     own typical spectral flux) and drive
+    //   richness          how evenly sound spreads across the spectrum, plus
+    //                     high and low presence (a ratio: volume-independent)
+    //   change            how far the intensity is moving from its long-term level
+    // A calm threshold with hysteresis gates it, then it eases in (attack)
+    // and out (release) over seconds.
+    _interaction(dt) {
+      const TW = this.tw, ez = (k, x, tau) => (this[k] = (this[k] ?? x) + (x - (this[k] ?? x)) * (1 - Math.exp(-dt / tau)));
+      const on = !this.idle && TW.twoOn > 0.5 && TW.inter > 0;
+      const energy = ez('_iE', clamp(this.vol ?? 0), 4);
+      const rhythm = ez('_iR', clamp(0.6 * clamp(((this.onsetRate ?? 1) - 0.8) / 3.2) + 0.4 * (this.drive ?? 0.4)), 3);
+      const rich = ez('_iX', clamp(this.lush ?? 0), 4);
+      const change = ez('_iV', clamp((this.eDev ?? 0) * 5), 3);
+      const raw = clamp(0.25 * energy + 0.3 * rhythm + 0.3 * rich + 0.15 * change) * (1 - (this.quietAmt || 0));
+      const thr = TW.interThr, hys = 0.06;
+      if (this._iOn) { if (raw < thr - hys) this._iOn = false; } else if (raw > thr + hys) this._iOn = true;
+      const k = clamp((raw - thr + hys) / 0.28), target = on && this._iOn ? clamp(TW.inter * k * k * (3 - 2 * k)) : 0;
+      const cur = this._iS ?? 0;
+      const tau = target > cur ? 3.5 / Math.max(0.05, TW.interIn) : 6 / Math.max(0.05, TW.interOut);
+      this._iS = cur + (target - cur) * (1 - Math.exp(-dt / tau));
+      this.interDbg = { energy, rhythm, rich, change, raw, thr, engaged: !!this._iOn, strength: this._iS };
+      return this._iS;
     }
 
     // a strong beat plucks the line near a random point
@@ -1123,6 +1208,11 @@ void main(){
         const u = Math.max(0, Math.min(8, (x / g.span * 0.5 + 0.5) * 8)), i = Math.min(7, Math.floor(u)), t = u - i;
         const p0 = h(i - 1), p1 = h(i), p2 = h(i + 1), p3 = h(i + 2);
         y += 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
+        if (g.O && this.tw && this.tw.twoOn > 0.5) {
+          const O = g.O, o = (j) => O[Math.max(0, Math.min(8, j))];
+          const q0 = o(i - 1), q1 = o(i), q2 = o(i + 1), q3 = o(i + 2);
+          y -= 0.25 * (2 * q1 + (-q0 + q2) * t + (2 * q0 - 5 * q1 + 4 * q2 - q3) * t * t + (-q0 + 3 * q1 - 3 * q2 + q3) * t * t * t);
+        }
       }
       return y;
     }
@@ -1132,6 +1222,9 @@ void main(){
       if (!this.guides || !g) return;
       gl.uniform3f(P.u.u_gA, g.A[0], g.A[1], g.A[2]);
       if (P.u.u_gH) { gl.uniform1fv(P.u.u_gH, g.H || new Float32Array(9)); gl.uniform1f(P.u.u_gSpan, g.span || 1); }
+      if (P.u.u_gO) gl.uniform1fv(P.u.u_gO, g.O || new Float32Array(9));
+      if (P.u.u_twoOn) gl.uniform1f(P.u.u_twoOn, this.tw && this.tw.twoOn > 0.5 ? 1 : 0);
+      if (P.u.u_twoShare) gl.uniform1f(P.u.u_twoShare, this.tw ? this.tw.twoShare : 0);
       gl.uniform3f(P.u.u_gK, g.K[0], g.K[1], g.K[2]);
       gl.uniform3f(P.u.u_gPh, g.ph[0], g.ph[1], g.ph[2]);
       gl.uniform3f(P.u.u_gTw, g.Tw[0], g.Tw[1], g.Tw[2]);
@@ -1447,6 +1540,7 @@ void main(){
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension));
       gl.uniform1f(P.u.u_size, 2.4 * this.dpr * this.tw.fineness);  // thicker lines
       gl.uniform3fv(P.u.u_colA, this.colA);
+      gl.uniform1f(P.u.u_twoTint, this.tw.twoOn > 0.5 ? 0.75 : 0);
       gl.uniform3fv(P.u.u_colB, this.colB);
       gl.uniform3fv(P.u.u_colAcc, this.colAcc || [1, 1, 1]);
       gl.uniform1f(P.u.u_visible, M.visible * (1 - 0.65 * quiet)); // MOOD + SILENCE: strands thin out to a faint line
@@ -1614,6 +1708,15 @@ void main(){
         ['Flow speed', 'How fast the light streams along the waves', TW, 'speed', 0, 3, 0.05],
         ['Tilting', 'How far the whole form turns over time', G, 'orient', 0, 2, 0.05],
         ['Beat ripples', 'How strongly beats send ripples through the waves', TW, 'ripples', 0, 3, 0.05],
+        ['Two currents and intertwining'],
+        ['Second current', 'Show a second current alongside the first (0 = off)', TW, 'twoOn', 0, 1, 1],
+        ['Second current share', 'How many particles the second current has', TW, 'twoShare', 0.15, 0.6, 0.01],
+        ['Calm gap', 'How far apart the currents sit when the music is calm', TW, 'twoGap', 0.3, 2, 0.05],
+        ['Intertwining', 'Interaction strength: how much musical activity draws them together (0 = never)', TW, 'inter', 0, 1.5, 0.05],
+        ['Calm threshold', 'Music below this keeps them apart', TW, 'interThr', 0.1, 0.9, 0.01],
+        ['Intertwining amplitude', 'How far they swing across each other when engaged', TW, 'interAmp', 0, 2, 0.05],
+        ['Convergence speed', 'How quickly they come together as the music builds', TW, 'interIn', 0.1, 3, 0.05],
+        ['Release speed', 'How quickly they part as the music softens', TW, 'interOut', 0.1, 3, 0.05],
         ['Strands'],
         ['Number of strands', 'How many fine strands make up each wave (fewer = clearer gaps)', TW, 'strands', 0.1, 3, 0.05],
         ['Strand fineness', 'How thick the particles that draw the strands are', TW, 'fineness', 0.3, 2.5, 0.05],
@@ -1662,6 +1765,19 @@ void main(){
       const head = document.createElement('div');
       head.innerHTML = '<b style="font-weight:600">Experiment</b> <span style="opacity:.6">· T hides this panel</span>';
       box.append(head);
+      // live readout: why the currents are (or aren't) intertwining
+      const read = document.createElement('div');
+      read.style.cssText = 'margin-top:8px;padding:6px 8px;border-radius:5px;background:rgba(255,255,255,.06);font-variant-numeric:tabular-nums;line-height:1.6';
+      box.append(read);
+      const bar = (v) => '▮'.repeat(Math.round(clamp(v) * 10)).padEnd(10, '▯');
+      setInterval(() => {
+        const d = this.interDbg;
+        if (!d) { read.textContent = 'intertwining: waiting for music'; return; }
+        read.innerHTML = `<b>intertwining ${(d.strength * 100).toFixed(0)}%</b> ${d.engaged ? '· engaged' : '· apart (calm)'}<br>`
+          + `music activity ${bar(d.raw)} ${d.raw.toFixed(2)} (threshold ${d.thr.toFixed(2)})<br>`
+          + `<span style="opacity:.7">energy ${bar(d.energy)} ${d.energy.toFixed(2)}<br>rhythm ${bar(d.rhythm)} ${d.rhythm.toFixed(2)}<br>`
+          + `richness ${bar(d.rich)} ${d.rich.toFixed(2)}<br>change ${bar(d.change)} ${d.change.toFixed(2)}</span>`;
+      }, 250);
       const inputs = [];
       for (const sp of S) {
         if (sp.length === 1) {

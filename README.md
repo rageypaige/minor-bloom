@@ -47,6 +47,16 @@ phone with **audio file**.
   music lets it relax toward a gentle, nearly straight line; energetic,
   changing music swings and folds it, turns it and moves it around the
   screen. Strong beats pluck it, sending a ripple along it.
+- **Two currents that intertwine with the music.** A second current runs
+  alongside the first. When the music is calm and sparse they flow
+  independently with generous space between them. As the music becomes
+  active, layered and rich, they draw together, cross, wind around each other
+  and partly overlap, their colours mixing where they meet; as it softens
+  they gently part again. How engaged they are comes only from the music:
+  sustained energy (against the song's own peak), rhythmic density, spectral
+  richness and change in intensity, gated by a calm threshold with
+  hysteresis and eased in and out over seconds. (`?dev` shows a live readout
+  of why, and sliders for strength, threshold, amplitude and speeds.)
 - **Colour follows the harmony**, on Paige's ink palette: minor-leaning
   music sits in petrol ink and storm blue, in-between harmony in bruised
   plum and black cherry, major-leaning music in copper rose and tarnished
@@ -83,7 +93,9 @@ and tempo is folded into 72-144 bpm.
 Add `?dev` to the address
 ([paigelatimer.ca/minor-bloom/?dev](https://paigelatimer.ca/minor-bloom/?dev))
 for a panel of plain-language sliders: the shape and movement of the wave,
-how much the music reshapes, turns and moves it, the free-drawn line, the
+how much the music reshapes, turns and moves it, the two currents and
+intertwining (with a live readout of the music-derived interaction
+strength), the free-drawn line, the
 strands and core strand, side waves (off by default), light and texture,
 and colour. Hover a slider to see what it does. Changes are live and are
 remembered in your browser on the `?dev` link only; **copy settings**
