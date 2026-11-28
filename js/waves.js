@@ -195,7 +195,7 @@ void main(){
     // only the wave line nearest the guide is the current (a line two-thirds
     // of a step or more away is hidden; exactly between two lines both show,
     // softly, so the hand-over is smooth)
-    sideK = smoothstep(.35, .65, abs(myLine - guideLevel));
+    sideK = smoothstep(.44, .58, abs(myLine - guideLevel));
   }
   // a side-wave particle follows a line parallel to the main wave, a
   // fraction of the way to the next wave line (one or two steps out, on a
@@ -383,7 +383,7 @@ void main(){
     v_a *= 1. - texelFetch(u_side, ij, 0).x;
     // small groups that stray well clear of the ribbon fade away rather than
     // leaving short comb-like trails out in the dark
-    v_a *= 1. - smoothstep(1., 1.4, abs(gd));
+    v_a *= 1. - smoothstep(.85, 1.25, abs(gd));
     expr = exp(-gd * gd * 1.6) * (.6 + 1.4 * (1. - gPinch(rg.x)));
   }
   // TENDER: only some particles are drawn, so the filaments are sparse
@@ -808,7 +808,7 @@ void main(){
       // TWEAKS: overall multipliers on the music-driven shape and light, set
       // from the ?dev panel (1 = as designed)
       this.tw = { twoOn: 1, twoShare: 0.42, twoGap: 1, twoThr: 0.37, inter: 1, interThr: 0.45, interAmp: 1, interIn: 1, interOut: 1,
-        waves: 1, thick: 0.3, spread: 1.1, speed: 1.15, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.75, sideThin: 0.45, sideMusic: 1.4, sideShare: 0, sideGap: 0.3, dust: 0 };  // (side waves off by default)
+        waves: 1, thick: 0.3, spread: 1.1, speed: 1.15, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.75, sideThin: 0.45, sideMusic: 1.4, sideShare: 0, sideGap: 0.3, dust: 0.2 };  // (side waves off by default)
       if (q.has('dev')) this._devPanel();
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
       if (!gl) throw new Error('WebGL2 is not available');
