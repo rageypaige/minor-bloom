@@ -47,8 +47,9 @@ phone with **audio file**.
   music lets it relax toward a gentle, nearly straight line; energetic,
   changing music swings and folds it, turns it and moves it around the
   screen. Strong beats pluck it, sending a ripple along it.
-- **Two currents that intertwine with the music.** A second current runs
-  alongside the first. When the music is calm and sparse they flow
+- **One line becomes two.** Every song starts as a single line. When the
+  music grows more intense, a second current gradually parts from the first
+  and runs alongside it (and merges back after a long calm passage). When the music is calm and sparse they flow
   independently with generous space between them. As the music becomes
   active, layered and rich, they draw together, cross, wind around each other
   and partly overlap, their colours mixing where they meet; as it softens

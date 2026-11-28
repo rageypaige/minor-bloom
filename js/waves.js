@@ -807,7 +807,7 @@ void main(){
       this.R = { ...RENDER };
       // TWEAKS: overall multipliers on the music-driven shape and light, set
       // from the ?dev panel (1 = as designed)
-      this.tw = { twoOn: 1, twoShare: 0.42, twoGap: 1, inter: 1, interThr: 0.45, interAmp: 1, interIn: 1, interOut: 1,
+      this.tw = { twoOn: 1, twoShare: 0.42, twoGap: 1, twoThr: 0.37, inter: 1, interThr: 0.45, interAmp: 1, interIn: 1, interOut: 1,
         waves: 1, thick: 0.3, spread: 1.1, speed: 1.15, wavy: 0, bright: 1, ripples: 2.85, strands: 1.55, fineness: 0.5, spine: 0.39, spinePos: -0.18, coreBright: 0.65, coreSize: 2.55, side: 0.75, sideThin: 0.45, sideMusic: 1.4, sideShare: 0, sideGap: 0.3, dust: 0.2 };  // (side waves off by default)
       if (q.has('dev')) this._devPanel();
       const gl = (this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false }));
@@ -906,6 +906,8 @@ void main(){
 
     // Particles start scattered loosely around the middle.
     reset() {
+      this.twoPres = 0; this._pOn = false; this._iS = 0; this._iOn = false; // each song starts as one line
+      if (this.g) { this.g.O = null; this.g.Ov = null; }
       // a new song starts a new fingerprint
       this.songD = null;
       this.dims = null;
@@ -1145,10 +1147,14 @@ void main(){
     // offsets are coupled so the curves stay smooth.
     _intertwine(dt, g) {
       const TW = this.tw, N = MB.noise3, sd = this.focus.seed;
-      const I = this._interaction(dt);
-      g.O = g.O || new Float32Array(9).fill(0.3);
+      // the second current is present only once the music asks for it;
+      // until then it sits exactly on the first (one line), and it parts
+      // out of it as it appears; intertwining needs it to be there
+      const pres = this.twoPres || 0;
+      const I = Math.min(this._interaction(dt), pres);
+      g.O = g.O || new Float32Array(9); // (starts as one line)
       g.Ov = g.Ov || new Float32Array(9);
-      const sep = 0.3 * TW.twoGap * (g.scale || 1);          // the calm gap (screen heights)
+      const sep = 0.3 * TW.twoGap * (g.scale || 1) * pres;   // the calm gap (screen heights), 0 while one line
       const D = this.dims || {};
       g.Oph = (g.Oph ?? rnd(0, 50)) + dt * (0.03 + 0.12 * I * (0.5 + (D.rhythm ?? 0.3)));
       const swing = TW.interAmp * 0.42 * (g.scale || 1);
@@ -1192,7 +1198,15 @@ void main(){
       const cur = this._iS ?? 0;
       const tau = target > cur ? 3.5 / Math.max(0.05, TW.interIn) : 6 / Math.max(0.05, TW.interOut);
       this._iS = cur + (target - cur) * (1 - Math.exp(-dt / tau));
-      this.interDbg = { energy, rhythm, rich, change, raw, thr, engaged: !!this._iOn, strength: this._iS };
+      // PRESENCE of the second current: appears when the activity rises
+      // above its own (lower) threshold, eases in over seconds, and merges
+      // back only after a long calm (slow release, with hysteresis)
+      const pThr = TW.twoThr;
+      if (this._pOn) { if (raw < pThr - 0.08) this._pOn = false; } else if (raw > pThr + 0.04) this._pOn = true;
+      const pT = !this.idle && TW.twoOn > 0.5 && this._pOn ? 1 : 0;
+      const pc = this.twoPres || 0;
+      this.twoPres = pc + (pT - pc) * (1 - Math.exp(-dt / (pT > pc ? 4 : 12)));
+      this.interDbg = { energy, rhythm, rich, change, raw, thr, engaged: !!this._iOn, strength: this._iS, presence: this.twoPres, pThr };
       return this._iS;
     }
 
@@ -1548,7 +1562,7 @@ void main(){
       gl.uniform1f(P.u.u_cross, this.guides ? 0 : Math.min(0.6, M.cross + 0.3 * tension));
       gl.uniform1f(P.u.u_size, 2.4 * this.dpr * this.tw.fineness);  // thicker lines
       gl.uniform3fv(P.u.u_colA, this.colA);
-      gl.uniform1f(P.u.u_twoTint, this.tw.twoOn > 0.5 ? 0.75 : 0);
+      gl.uniform1f(P.u.u_twoTint, this.tw.twoOn > 0.5 ? 0.75 * (this.twoPres || 0) : 0);
       gl.uniform3fv(P.u.u_colB, this.colB);
       gl.uniform3fv(P.u.u_colAcc, this.colAcc || [1, 1, 1]);
       gl.uniform1f(P.u.u_visible, M.visible * (1 - 0.65 * quiet)); // MOOD + SILENCE: strands thin out to a faint line
@@ -1719,6 +1733,7 @@ void main(){
         ['Two currents and intertwining'],
         ['Second current', 'Show a second current alongside the first (0 = off)', TW, 'twoOn', 0, 1, 1],
         ['Second current share', 'How many particles the second current has', TW, 'twoShare', 0.15, 0.6, 0.01],
+        ['Second current appears', 'How much musical activity it takes for the second current to part from the first', TW, 'twoThr', 0.05, 0.9, 0.01],
         ['Calm gap', 'How far apart the currents sit when the music is calm', TW, 'twoGap', 0.3, 2, 0.05],
         ['Intertwining', 'Interaction strength: how much musical activity draws them together (0 = never)', TW, 'inter', 0, 1.5, 0.05],
         ['Calm threshold', 'Music below this keeps them apart', TW, 'interThr', 0.1, 0.9, 0.01],
@@ -1781,7 +1796,7 @@ void main(){
       setInterval(() => {
         const d = this.interDbg;
         if (!d) { read.textContent = 'intertwining: waiting for music'; return; }
-        read.innerHTML = `<b>intertwining ${(d.strength * 100).toFixed(0)}%</b> ${d.engaged ? '· engaged' : '· apart (calm)'}<br>`
+        read.innerHTML = `<b>second current ${(d.presence * 100).toFixed(0)}%</b> (appears above ${d.pThr.toFixed(2)})<br><b>intertwining ${(d.strength * 100).toFixed(0)}%</b> ${d.engaged ? '· engaged' : '· apart (calm)'}<br>`
           + `music activity ${bar(d.raw)} ${d.raw.toFixed(2)} (threshold ${d.thr.toFixed(2)})<br>`
           + `<span style="opacity:.7">energy ${bar(d.energy)} ${d.energy.toFixed(2)}<br>rhythm ${bar(d.rhythm)} ${d.rhythm.toFixed(2)}<br>`
           + `richness ${bar(d.rich)} ${d.rich.toFixed(2)}<br>change ${bar(d.change)} ${d.change.toFixed(2)}</span>`;
