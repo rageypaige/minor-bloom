@@ -1086,20 +1086,20 @@ void main(){
       const ez = (key, target, tau) => (g[key] = (g[key] ?? target) + (target - (g[key] ?? target)) * (1 - Math.exp(-dt / tau)));
       // sparse, calm music relaxes it toward a straight line; tense,
       // energetic, changing music folds it deeply
-      const depth = ez('depthM', 0.15 + 1.7 * clamp(0.45 * E + 0.35 * T + 0.3 * Vv), 3);
+      const depth = ez('depthM', 0.15 + 1.7 * clamp(0.45 * E + 0.35 * T + 0.3 * Vv), 7);
       g.A[1] *= 1 + SM * (depth - 1);
       g.A[2] *= 1 + SM * 0.6 * (depth - 1);
       // a big sweep rises with energy and change, and settles when calm
       g.A[0] += SM * 0.12 * ez('sweepM', clamp(0.6 * E + 0.6 * Vv - 0.25), 4) * g.scale;
       // wavelength: long gentle curves .. tighter, quicker ones (drifting
       // slowly, quicker with busier rhythm)
-      const wl = ez('waveM', clamp(0.55 + 0.9 * (0.5 + 0.5 * sn(0.02, 83)) + 0.5 * (Rr - 0.4), 0.45, 2), 6);
+      const wl = ez('waveM', clamp(0.55 + 0.9 * (0.5 + 0.5 * sn(0.02, 83)) + 0.5 * (Rr - 0.4), 0.45, 2), 14);
       g.K[1] *= 1 + SM * (wl - 1);
       // it turns: slowly, further when the music is changing
       g.turnPh = (g.turnPh ?? rnd(0, 6)) + dt * (0.015 + 0.05 * Vv);
-      this.ang += G.turnMusic * Math.sin(g.turnPh) * ez('turnM', 0.5 + 0.5 * clamp(E + Vv), 5);
+      this.ang += G.turnMusic * Math.sin(g.turnPh) * ez('turnM', 0.5 + 0.5 * clamp(E + Vv), 9);
       // and it moves around the screen more when the music has energy
-      this.driftAmt = 1 + G.driftMusic * 1.2 * ez('driftM', E, 4);
+      this.driftAmt = 1 + G.driftMusic * 1.2 * ez('driftM', E, 8);
       // length of the gesture across the screen for its current orientation
       g.len = Math.abs(Math.cos(this.ang)) * this.asp + Math.abs(Math.sin(this.ang));
       g.K = g.K.map((k) => k * Math.max(1, this.asp) / Math.max(0.8, g.len));
@@ -1115,14 +1115,17 @@ void main(){
       g.span = g.len * 0.5 * 1.15;
       g.H = g.H || new Float32Array(9);
       g.Hv = g.Hv || new Float32Array(9);
-      g.Hph = (g.Hph ?? rnd(0, 50)) + dt * G.lineSpeed * (0.05 + 0.18 * mid + 0.12 * Vv + 0.04 * (this.quietAmt || 0));
+      g.Hb = g.Hb || new Float32Array(9); // swells from beats (eased in, fading out)
+      for (let i = 0; i < 9; i++) g.Hb[i] *= Math.exp(-dt / 1.4);
+      const midS = ez('midS', mid, 5); // (a slow average: the pace never twitches)
+      g.Hph = (g.Hph ?? rnd(0, 50)) + dt * G.lineSpeed * (0.05 + 0.18 * midS + 0.12 * Vv + 0.04 * (this.quietAmt || 0));
       const amp = LN * G.lineAmp * g.scale * (0.03 + 0.2 * depth + 0.03 * (this.quietAmt || 0)); // (in silence: a slow, gentle bob)
       const steps = 4, h = dt / steps;
       for (let st = 0; st < steps; st++) {
         for (let i = 0; i < 9; i++) {
-          const target = amp * clamp(N(g.Hph + i * 0.62, sd * 2.1, 91) * 2.6, -1, 1);
+          const target = amp * clamp(N(g.Hph + i * 0.62, sd * 2.1, 91) * 2.6, -1, 1) + g.Hb[i];
           const lap = (g.H[Math.max(0, i - 1)] + g.H[Math.min(8, i + 1)] - 2 * g.H[i]);
-          g.Hv[i] += (6 * (target - g.H[i]) + 14 * lap - 3.5 * g.Hv[i]) * h;
+          g.Hv[i] += (3 * (target - g.H[i]) + 8 * lap - 4.2 * g.Hv[i]) * h;
         }
         for (let i = 0; i < 9; i++) g.H[i] += g.Hv[i] * h;
       }
@@ -1154,7 +1157,7 @@ void main(){
           const engaged = sep * 0.05 + swing * n;
           const target = calm + (engaged - calm) * I;
           const lap = g.O[Math.max(0, i - 1)] + g.O[Math.min(8, i + 1)] - 2 * g.O[i];
-          g.Ov[i] += (4 * (target - g.O[i]) + 5 * lap - 3.2 * g.Ov[i]) * h;
+          g.Ov[i] += (2.5 * (target - g.O[i]) + 4 * lap - 3.6 * g.Ov[i]) * h;
         }
         for (let i = 0; i < 9; i++) g.O[i] += g.Ov[i] * h;
       }
@@ -1195,10 +1198,12 @@ void main(){
       const g = this.g;
       if (!g || !g.Hv || !GUIDE.pluck) return;
       const j = 1 + Math.floor(Math.random() * 7), sgn = Math.random() < 0.5 ? -1 : 1;
-      const k = GUIDE.pluck * strength * 0.9 * (g.scale || 1);
-      g.Hv[j] += sgn * k;
-      g.Hv[j - 1] += sgn * k * 0.5;
-      g.Hv[j + 1] += sgn * k * 0.5;
+      // a gentle swell near that point (the line eases into it and out again)
+      const k = GUIDE.pluck * strength * 0.05 * (g.scale || 1);
+      if (!g.Hb) return;
+      g.Hb[j] += sgn * k;
+      g.Hb[j - 1] += sgn * k * 0.6;
+      g.Hb[j + 1] += sgn * k * 0.6;
     }
     _gY(x) {
       const g = this.g;
